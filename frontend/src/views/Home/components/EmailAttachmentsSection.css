@@ -1,0 +1,113 @@
+/* Стили для секции почтовых вложений */
+.email-attachments-section {
+  max-width: 1000px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+/* Футер с кнопкой проверки почты */
+.email-check-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: 2rem;
+}
+
+/* Кнопка проверки почты */
+.check-email-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 150px;
+  padding: 0.5rem;
+  background: #ffffff;
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  cursor: pointer;
+  transition: var(--transition);
+  box-shadow: var(--shadow);
+}
+
+.check-email-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.check-email-btn img {
+  width: 100%;
+}
+
+/* Grid-таблица с 3 колонками */
+.attachments-grid {
+  display: grid;
+  grid-template-columns: auto 1fr auto; /* 3 колонки */
+  gap: 1rem;
+  align-items: center;
+  max-width: 1000px;
+  margin: 3rem auto; /* Отступы сверху и снизу */
+}
+
+/* Строка таблицы */
+.grid-row {
+  display: contents; /* Элементы строки участвуют в общей сетке */
+}
+
+/* Ячейки таблицы */
+.grid-cell {
+  padding: 1rem 0.5rem;
+}
+
+/* Контент (центральная колонка) */
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  border-bottom: 1px solid #eee;
+}
+
+.date {
+  font-size: 0.95rem;
+  color: #222;
+}
+
+.doc-info {
+  font-weight: bold;
+  color: #0004ff;
+  font-size: 1rem;
+}
+
+.sender {
+  color: #666;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+/* Состояние "нет файлов" */
+.empty-state {
+  grid-column: 1 / -1; /* Занимает все колонки */
+  text-align: center;
+  padding: 3rem;
+  color: #777;
+  font-style: italic;
+  font-size: 1.1rem;
+}
+
+/* Кнопки действий */
+.action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.4rem;
+  transition: all 0.2s;
+  border-radius: 4px;
+}
+
+.action-btn:hover {
+  transform: scale(1.15);
+  background-color: #f5f5f5;
+}
+
+.action-btn img {
+  width: 26px;
+  height: 26px;
+  display: block;
+}

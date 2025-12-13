@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS telegram_users (
+    id BIGSERIAL PRIMARY KEY,
+    telegram_id BIGINT UNIQUE NOT NULL,
+    first_name VARCHAR(255),
+    last_name VARCHAR(255),
+    username VARCHAR(255)
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id BIGSERIAL PRIMARY KEY,
+    telegram_user_id BIGINT UNIQUE REFERENCES telegram_users(id),
+    last_name VARCHAR(255) NOT NULL,
+    first_name VARCHAR(255) NOT NULL,
+    abr VARCHAR(3) NOT NULL,
+    role VARCHAR(100) NOT NULL
+);
+
+
+
+scp -P 23451 dl_admin_tsy@80.87.202.52:/home/dl_admin_tsy/tmp/index.html "C:\tmp\download"
+scp -P 23451 "C:\tmp\download\index.html" dl_admin_tsy@80.87.202.52:/home/dl_admin_tsy/tmp/
