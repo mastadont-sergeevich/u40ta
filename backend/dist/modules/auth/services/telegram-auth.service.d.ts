@@ -4,8 +4,9 @@ export declare class TelegramAuthService {
     private telegramUsersService;
     private readonly logger;
     constructor(telegramUsersService: TelegramUsersService);
-    createOrFind(telegramData: any): Promise<{
+    processTelegramData(telegramData: any): Promise<{
         user: TelegramUser;
         isNew: boolean;
     }>;
+    validateTelegramData(telegramData: any): Promise<boolean>;
 }

@@ -11,15 +11,12 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.User = void 0;
 const typeorm_1 = require("typeorm");
-const telegram_user_entity_1 = require("../../telegram-users/entities/telegram-user.entity");
 let User = class User {
     id;
-    telegramUserId;
+    telegramUsersId;
     lastName;
     firstName;
     abr;
-    role;
-    telegramUser;
 };
 exports.User = User;
 __decorate([
@@ -27,9 +24,9 @@ __decorate([
     __metadata("design:type", Number)
 ], User.prototype, "id", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ name: 'telegram_user_id', nullable: true }),
+    (0, typeorm_1.Column)({ name: 'telegram_users_id', nullable: true, unique: true }),
     __metadata("design:type", Number)
-], User.prototype, "telegramUserId", void 0);
+], User.prototype, "telegramUsersId", void 0);
 __decorate([
     (0, typeorm_1.Column)({ name: 'last_name' }),
     __metadata("design:type", String)
@@ -42,15 +39,6 @@ __decorate([
     (0, typeorm_1.Column)(),
     __metadata("design:type", String)
 ], User.prototype, "abr", void 0);
-__decorate([
-    (0, typeorm_1.Column)(),
-    __metadata("design:type", String)
-], User.prototype, "role", void 0);
-__decorate([
-    (0, typeorm_1.ManyToOne)(() => telegram_user_entity_1.TelegramUser),
-    (0, typeorm_1.JoinColumn)({ name: 'telegram_user_id' }),
-    __metadata("design:type", telegram_user_entity_1.TelegramUser)
-], User.prototype, "telegramUser", void 0);
 exports.User = User = __decorate([
     (0, typeorm_1.Entity)('users')
 ], User);

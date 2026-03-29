@@ -1,12 +1,19 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AppEventsModule } from './modules/app-events/app-events.module'; // SSE
 import { TelegramUsersModule } from './modules/telegram-users/telegram-users.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { LogsModule } from './modules/logs/logs.module';
 import { EmailModule } from './modules/email/email.module';
+import emailConfig from './modules/email/config/email.config';
 import { StatementsModule } from './modules/statements/statements.module';
+import { OfflineModule } from './modules/offline/offline.module';
+import { ObjectsModule } from './modules/objects/objects.module';
+import { QrCodesModule } from './modules/qr-codes/qr-codes.module';
+import { PhotosModule } from './modules/photos/photos.module';
 
 @Module({
   imports: [
@@ -14,6 +21,8 @@ import { StatementsModule } from './modules/statements/statements.module';
     // isGlobal: true делает конфигурацию доступной во всех модулях приложения без дополнительного импорта
     ConfigModule.forRoot({
       isGlobal: true,
+      load: [emailConfig],  
+      envFilePath: '.env',
     }),
 
     // TypeOrmModule - модуль для работы с базой данных PostgreSQL
@@ -40,6 +49,13 @@ import { StatementsModule } from './modules/statements/statements.module';
       inject: [ConfigService], // Внедряем ConfigService в фабрику
     }),
 
+    // Модуль логгирования
+    ThrottlerModule.forRoot([{
+          ttl: 60000,  // время жизни окна в миллисекундах (1 минута)
+          limit: 50,   // максимальное количество запросов за окно
+        }]),
+    LogsModule,    
+
     // Импорты наших модулей приложения
     
     // AppEventsModule - система реального времени (SSE) для мгновенных уведомлений клиентов
@@ -65,7 +81,22 @@ import { StatementsModule } from './modules/statements/statements.module';
     // StatementsModule - модуль работы с электронной почтой
     // Сервисы получения excel-таблиц и выгрузки выборок
     StatementsModule,
-    
+
+    // Модуль работы в оффлайн режиме
+    // Сервисы кэширования из БД в IndexDB и обратная синхронизация
+    OfflineModule,
+
+    // ObjectsModule - модуль работы с объектами инвентарного учёта
+    // Предоставляет CRUD операции для объектов склада с полями: инв.номер, серийный номер, место использования
+    ObjectsModule,
+
+    // Модуль работы с QR-кодами
+    // Обеспечивает связь отсканированных QR-значений с объектами системы
+    QrCodesModule,
+
+    // Модуль работы с фотографиями
+    // Обеспечивает связь таблицы фотографий с объектами системы
+    PhotosModule,
   ],
   
   // providers - массив сервисов, не объявленных в других модулях

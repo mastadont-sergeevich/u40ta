@@ -1,12 +1,16 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not } from 'typeorm';
+import { Injectable, NotFoundException, InternalServerErrorException } from '@nestjs/common';
+import { InjectEntityManager, InjectRepository } from '@nestjs/typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import * as XLSX from 'xlsx';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as process from 'process';
 import { EmailAttachment } from '../../email/entities/email-attachment.entity';
 import { ProcessedStatement } from '../entities/processed-statement.entity';
 import { AppEventsService } from '../../app-events/app-events.service';
+import { ParsedOSVExcelRowDto } from '../dto/parsed-osv-excel-row.dto';
+import { ParsedOSExcelRowDto } from '../dto/parsed-os-excel-row.dto';
+import { ProcessedStatementDto } from '../dto/statement-response.dto';
 
 @Injectable()
 export class StatementParserService {
@@ -17,161 +21,301 @@ export class StatementParserService {
     @InjectRepository(ProcessedStatement)
     private processedStatementRepo: Repository<ProcessedStatement>,
     
-    private appEventsService: AppEventsService
+    @InjectEntityManager()
+    private entityManager: EntityManager,
+    
+    private appEventsService: AppEventsService,
   ) {}
 
   /**
-   * Основной метод: открыть/распарсить ведомость
+   * Публичный метод: возвращает существующие записи ведомости
+   * Используется когда ведомость уже в работе (in_process = true)
    */
-  async parseStatement(attachmentId: number): Promise<ProcessedStatement[]> {
+  async getExistingStatements(attachmentId: number): Promise<ProcessedStatementDto[]> {
+    const entities = await this.processedStatementRepo.find({
+      where: { emailAttachmentId: attachmentId },
+      order: { id: 'ASC' },
+    });
+    
+    // Преобразуем Entity в DTO
+    return ProcessedStatementDto.fromEntities(entities);
+  }
+
+  /**
+   * Публичный метод: основной парсинг ведомости
+   * Создает записи в processed_statements
+   */
+  async parseStatement(attachmentId: number): Promise<ProcessedStatementDto[]> {
+    //console.log(`StatementParserService: парсинг ведомости ID: ${attachmentId}`);
+    
     // 1. Находим вложение
     const attachment = await this.emailAttachmentRepo.findOne({
-      where: { id: attachmentId }
+      where: { id: attachmentId },
     });
     
     if (!attachment) {
       throw new NotFoundException(`Вложение с ID ${attachmentId} не найдено`);
     }
     
-    // 2. Если ведомость ещё не обрабатывалась
-    if (!attachment.in_process) {
-      console.log(`🔄 Первое открытие ведомости ${attachmentId}`);
-      
-      // 2a. Удаляем старые данные того же склада и типа
-      await this.cleanOldStatements(attachment);
-      
-      // 2b. Читаем и парсим Excel
-      const excelRows = await this.readExcelFile(attachment.filename);
-      
-      // 2c. Создаём записи в processed_statements
-      const createdStatements = await this.createStatementRecords(excelRows, attachment);
-      
-      // 2d. Обновляем флаг in_process
-      await this.emailAttachmentRepo.update(attachmentId, { in_process: true });
-      
-      // 2e. Уведомляем об обновлении (для EmailModule)
-      this.appEventsService.notifyAll();
-      
-      console.log(`✅ Создано ${createdStatements.length} записей`);
-      return createdStatements;
+    // 2. Пропускаем инвентаризацию
+    if (attachment.isInventory) {
+      //console.log(`StatementParserService: пропускаем инвентаризацию (ID: ${attachmentId})`);
+      return [];
     }
     
-    // 3. Если ведомость уже обрабатывалась - возвращаем существующие записи
-    console.log(`📄 Возвращаем существующие записи ведомости ${attachmentId}`);
-    return await this.processedStatementRepo.find({
-      where: { emailAttachmentId: attachmentId },
-      order: { id: 'ASC' }
-    });
-  }
-
-  /**
-   * Удаление старых записей processed_statements того же склада и типа
-   */
-  private async cleanOldStatements(attachment: EmailAttachment): Promise<void> {
-    if (!attachment.sklad || !attachment.doc_type) {
-      return; // Нет данных для очистки
+    // 3. Если ведомость уже в работе - возвращаем существующие записи
+    if (attachment.inProcess) {
+      //console.log(`StatementParserService: ведомость уже в работе`);
+      return await this.getExistingStatements(attachmentId);
     }
     
-    console.log(`🗑️ Удаление старых записей склада ${attachment.sklad}, тип ${attachment.doc_type}`);
-    
-    await this.processedStatementRepo.delete({
-      sklad: attachment.sklad,
-      doc_type: attachment.doc_type,
-      emailAttachmentId: Not(attachment.id) // кроме текущего
-    });
-  }
-
-  /**
-   * Чтение Excel файла из папки email-attachments
-   */
-  private async readExcelFile(filename: string): Promise<any[]> {
-    const emailAttachmentsDir = path.join(process.cwd(), '..', 'email-attachments');
-    const filePath = path.join(emailAttachmentsDir, filename);
-    
-    console.log(`📖 Чтение файла: ${filePath}`);
-    
+    // 4. Проверяем наличие файла
+    const filePath = this.getFilePath(attachment.filename);
     if (!fs.existsSync(filePath)) {
-      throw new Error(`Файл ${filename} не найден в папке email-attachments`);
+      throw new InternalServerErrorException(`Файл не найден: ${attachment.filename}`);
     }
+    
+    // 5. Проверяем обязательные поля
+    if (!attachment.sklad || !attachment.docType) {
+      throw new InternalServerErrorException(
+        `У вложения отсутствует склад (${attachment.sklad}) или тип документа (${attachment.docType})`,
+      );
+    }
+    
+    // 6. Транзакция (все операции атомарно)
+    let savedEntities: ProcessedStatement[] = [];
     
     try {
-      // Читаем Excel
+      // Очищаем старую ведомость и подготавливаем место для новой
+      await this.prepareForNewStatement(attachment);
+
+      // Разветвление по типу документа
+      if (attachment.docType === 'ОСВ') {
+        const excelRows = this.parseOSVExcel(filePath);
+        const newEntities = this.createOSVStatementsFromExcel(excelRows, attachment);
+        savedEntities = await this.saveStatementsInTransaction(newEntities, attachment);
+      } else if (attachment.docType === 'ОС') {
+        const excelRows = this.parseOSExcel(filePath);
+        const newEntities = this.createOSStatementsFromExcel(excelRows, attachment);
+        savedEntities = await this.saveStatementsInTransaction(newEntities, attachment);
+      } else {
+        throw new InternalServerErrorException(`Неизвестный тип документа: ${attachment.docType}`);
+      }
+    
+      this.appEventsService.notifyStatementActiveChanged(attachmentId, attachment.zavod, attachment.sklad);
+      //console.log('StatementParserService: отправлено SSE уведомление');
+      
+      return ProcessedStatementDto.fromEntities(savedEntities);
+      
+    } catch (error) {
+      //console.error('StatementParserService: ошибка обработки ведомости:', error);
+      throw new InternalServerErrorException(
+        `Ошибка обработки ведомости: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Подготовка. Удаление старых записей и сброс флага у предыдущей активной ведомости
+   */
+  private async prepareForNewStatement(attachment: EmailAttachment): Promise<void> {
+    await this.entityManager.transaction(async (transactionalEntityManager) => {
+      // Находим старую активную ведомость
+      const oldStatement = await transactionalEntityManager.findOne(
+        ProcessedStatement,
+        {
+          where: { 
+            sklad: attachment.sklad || '',
+            doc_type: attachment.docType || '',
+          },
+          select: ['emailAttachmentId'],
+        },
+      );
+      
+      const oldAttachmentId = oldStatement?.emailAttachmentId;
+      //console.log(`StatementParserService: найдена старая ведомость ID: ${oldAttachmentId || 'нет'}`);
+      
+      // Удаляем старые записи этого склада/типа
+      await transactionalEntityManager.delete(ProcessedStatement, {
+        sklad: attachment.sklad,
+        doc_type: attachment.docType,
+      });
+      //console.log(`StatementParserService: удалены старые записи склада ${attachment.sklad}, тип ${attachment.docType}`);
+      
+      // Сбрасываем флаг у старой ведомости
+      if (oldAttachmentId && oldAttachmentId !== attachment.id) {
+        await transactionalEntityManager.update(
+          EmailAttachment,
+          { id: oldAttachmentId },
+          { inProcess: false },
+        );
+        //console.log(`StatementParserService: сброшен флаг in_process у ведомости ID: ${oldAttachmentId}`);
+      }
+    });
+  }
+
+  /**
+   * Сохранение новых записей и установка флага активной ведомости
+   */
+  private async saveStatementsInTransaction(
+    newEntities: ProcessedStatement[],
+    attachment: EmailAttachment
+  ): Promise<ProcessedStatement[]> {
+    return await this.entityManager.transaction(async (transactionalEntityManager) => {
+      // Сохраняем новые записи
+      const createdEntities = await transactionalEntityManager.save(
+        ProcessedStatement,
+        newEntities,
+      );
+      //console.log(`StatementParserService: сохранено записей: ${createdEntities.length}`);
+      
+      // Устанавливаем флаг у текущей ведомости
+      await transactionalEntityManager.update(
+        EmailAttachment,
+        { id: attachment.id },
+        { inProcess: true },
+      );
+      //console.log(`StatementParserService: установлен флаг in_process у ведомости ID: ${attachment.id}`);
+      
+      return createdEntities;
+    });
+  }
+
+  private parseOSVExcel(filePath: string): ParsedOSVExcelRowDto[] {
+    //console.log(`StatementParserService: чтение Excel файла ОСВ: ${filePath}`);
+    
+    try {
       const workbook = XLSX.readFile(filePath);
       const firstSheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[firstSheetName];
+      const data: ParsedOSVExcelRowDto[] = XLSX.utils.sheet_to_json(worksheet);
       
-      // Конвертируем в JSON
-      const data = XLSX.utils.sheet_to_json(worksheet);
-      console.log(`📊 Прочитано ${data.length} строк из Excel`);
-      
+      //console.log(`StatementParserService: прочитано строк ОСВ: ${data.length}`);
       return data;
       
     } catch (error) {
-      throw new Error(`Ошибка чтения Excel файла: ${error.message}`);
+      //console.error('StatementParserService: ошибка чтения Excel ОСВ:', error);
+      throw new InternalServerErrorException(`Ошибка чтения Excel файла ОСВ: ${error.message}`);
     }
   }
 
-  /**
-   * Создание записей в processed_statements из данных Excel
-   * Учитываем поле "Запас на конец периода" как количество
-   */
-  private async createStatementRecords(
-    excelRows: any[], 
-    attachment: EmailAttachment
-  ): Promise<ProcessedStatement[]> {
-    const createdStatements: ProcessedStatement[] = [];
+  private parseOSExcel(filePath: string): ParsedOSExcelRowDto[] {
+    //console.log(`StatementParserService: чтение Excel файла ОС: ${filePath}`);
     
-    console.log(`🔨 Создание записей для ${excelRows.length} строк Excel`);
+    try {
+      const workbook = XLSX.readFile(filePath);
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const data: any[] = XLSX.utils.sheet_to_json(worksheet);
+      
+      //console.log(`StatementParserService: прочитано строк ОС: ${data.length}`);
+      
+      const result: ParsedOSExcelRowDto[] = data.map(row => ({
+        'Основное средство': row['Основное средство']?.toString(),
+        'Название': row['Название']?.toString(),
+        'Инвентарный номер': row['Инвентарный номер']?.toString(),
+        'МОЛ': row['МОЛ']?.toString(),
+      }));
+      
+      return result;
+      
+    } catch (error) {
+      //console.error('StatementParserService: ошибка чтения Excel ОС:', error);
+      throw new InternalServerErrorException(`Ошибка чтения Excel файла ОС: ${error.message}`);
+    }
+  }
+
+  private createOSVStatementsFromExcel(
+    excelRows: ParsedOSVExcelRowDto[],
+    attachment: EmailAttachment,
+  ): ProcessedStatement[] {
+    const statements: ProcessedStatement[] = [];
     
     for (const row of excelRows) {
-      // Извлекаем данные из строки Excel
-      const zavod = row['Завод']?.toString() || '';
+      const zavod = row['Завод'] ? parseInt(row['Завод'].toString()) : 0;
       const sklad = row['Склад']?.toString() || attachment.sklad || '';
       const buhName = row['КрТекстМатериала']?.toString() || row['Материал']?.toString() || '';
       const invNumber = row['Материал']?.toString() || '';
       const partyNumber = row['Партия']?.toString() || '';
+
+      if (!invNumber || invNumber.trim() === '') {
+        //console.log(`StatementParserService: пропущена сводная строка ОСВ: "${buhName.substring(0, 50)}..."`);
+        continue;
+      }
       
-      // Количество из колонки "Запас на конец периода"
-      const quantity = this.parseQuantity(row['Запас на конец периода']);
+      let quantity = 1;
+      const quantityValue = row['Запас на конец периода'];
+      if (quantityValue !== undefined && quantityValue !== null) {
+        const num = Number(quantityValue);
+        if (!isNaN(num) && num > 0) {
+          quantity = Math.floor(num);
+        }
+      }
       
-      // Создаём N записей (по количеству)
       for (let i = 0; i < quantity; i++) {
-        const statement = this.processedStatementRepo.create({
-          emailAttachmentId: attachment.id,
-          sklad: sklad,
-          doc_type: attachment.doc_type || 'ОСВ',
-          zavod: zavod,
-          inv_number: invNumber,
-          party_number: partyNumber,
-          buh_name: buhName,
-          have_object: false,
-          is_ignore: false
-        });
+        const statement = new ProcessedStatement();
+        statement.emailAttachmentId = attachment.id;
+        statement.sklad = sklad;
+        statement.doc_type = attachment.docType || 'ОСВ';
+        statement.zavod = zavod;
+        statement.buh_name = buhName;
+        statement.inv_number = invNumber;
+        statement.party_number = partyNumber;
+        statement.have_object = false;
+        statement.is_ignore = false;
+        statement.is_excess = false;
         
-        createdStatements.push(statement);
+        statements.push(statement);
       }
     }
     
-    // Сохраняем все записи разом
-    return await this.processedStatementRepo.save(createdStatements);
+    //console.log(`StatementParserService: создано объектов ОСВ: ${statements.length}`);
+    return statements;
+  }
+
+    private createOSStatementsFromExcel(
+      excelRows: ParsedOSExcelRowDto[],
+      attachment: EmailAttachment,
+    ): ProcessedStatement[] {
+      const statements: ProcessedStatement[] = [];
+      
+      for (const row of excelRows) {
+        const buhName = row['Название']?.trim() || '';
+        const invNumber = row['Инвентарный номер']?.trim() || '';
+        const sklad = row['МОЛ']?.toString().trim() || attachment.sklad || '';
+        
+        // Пропускаем строки с пустыми обязательными полями
+        if (!buhName || !invNumber || !sklad) {
+          //console.log(`StatementParserService: пропущена строка ОС с пустыми полями: Название=${buhName}, Инвентарный номер=${invNumber}, МОЛ=${sklad}`);
+          continue;
+        }
+        
+        const statement = new ProcessedStatement();
+        statement.emailAttachmentId = attachment.id;
+        statement.sklad = sklad;
+        statement.doc_type = attachment.docType || 'ОС';
+        statement.zavod = 0;
+        statement.buh_name = buhName;
+        statement.inv_number = invNumber;
+        statement.party_number = '-';
+        statement.have_object = false;
+        statement.is_ignore = false;
+        statement.is_excess = false;
+        
+        statements.push(statement);
+      }
+      
+      //console.log(`StatementParserService: создано объектов ОС: ${statements.length}`);
+      return statements;
   }
 
   /**
-   * Парсинг количества из значения Excel
+   * Формирует полный путь к файлу
    */
-  private parseQuantity(value: any): number {
-    if (value === undefined || value === null || value === '') {
-      return 1; // По умолчанию 1
-    }
-    
-    // Пробуем преобразовать в число
-    const num = Number(value);
-    
-    if (isNaN(num) || num <= 0) {
-      return 1; // Если не число или <= 0, то 1
-    }
-    
-    // Округляем до целого
-    return Math.floor(num);
+  private getFilePath(filename: string): string {
+    const projectRoot = process.cwd();
+    const emailAttachmentsDir = path.join(projectRoot, '..', 'email-attachments');
+    const filePath = path.join(emailAttachmentsDir, filename);
+    return filePath;
   }
 }

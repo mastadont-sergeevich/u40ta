@@ -1,6 +1,9 @@
+import { ConfigService } from '@nestjs/config';
 export declare class SmtpService {
+    private configService;
     private transporter;
-    constructor();
+    private readonly logger;
+    constructor(configService: ConfigService);
     sendEmail(to: string, subject: string, text: string, attachments?: any[]): Promise<{
         success: boolean;
         messageId: any;

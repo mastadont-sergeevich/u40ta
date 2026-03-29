@@ -1,0 +1,14 @@
+.env
+sync-db.bat
+email-attachments/
+backend/node_modules/
+backend/dist/
+frontend/node_modules/
+frontend/views/test/
+docs/
+*.log
+.DS_Store
+Thumbs.db
+Desktop.ini
+.env
+sync-db.bat

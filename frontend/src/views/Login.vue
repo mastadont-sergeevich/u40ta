@@ -4,19 +4,10 @@
       
       <h1 class="login-title">U40TA</h1>
       
-      <!-- ОБЫЧНЫЙ РЕЖИМ -->
-      <div v-if="!isPending" class="telegram-btn-container">
+      <!-- ТОЛЬКО Telegram Widget -->
+      <div class="telegram-btn-container">
         <p class="login-subtitle">добро пожаловать</p>
         <div ref="telegramWidget"></div>
-      </div>
-      
-      <!-- РЕЖИМ ОЖИДАНИЯ -->
-      <div v-else class="pending-state">
-        <div class="pending-icon">⏳</div>
-        <h2 class="pending-title">Заявка принята!</h2>
-        <p class="pending-text">
-          Ожидайте уведомления в Telegram.<br>
-        </p>
       </div>
       
       <!-- PWA Кнопка -->
@@ -33,10 +24,6 @@ import PWAInstallButton from '@/components/ui/PWAInstallButton.vue'
 
 const BOT_USERNAME = 'u40ta_bot'
 
-// Глобальные переменные устройства (нативный подход)
-const isMobile = ref(JSON.parse(localStorage.getItem('device_isMobile') || 'false'))
-const hasCamera = ref(JSON.parse(localStorage.getItem('device_hasCamera') || 'false'))
-
 export default {
   name: 'Login',
   components: {
@@ -45,25 +32,14 @@ export default {
   setup() {
     const router = useRouter()
     const telegramWidget = ref(null)
-    const isPending = ref(false)
 
-    const checkAuthStatus = () => {
-      const pendingToken = localStorage.getItem('pending_token')
-      const authToken = localStorage.getItem('auth_token')
-      
-      if (authToken) {
-        router.push('/')
-        return
-      }
-      
-      if (pendingToken) {
-        isPending.value = true
-      }
+    // Если уже есть токен - сразу на Home
+    const authToken = localStorage.getItem('auth_token')
+    if (authToken) {
+      router.push('/')
     }
 
     const initTelegramWidget = () => {
-      if (isPending.value) return
-      
       const script = document.createElement('script')
       script.src = 'https://telegram.org/js/telegram-widget.js?22'
       script.setAttribute('data-telegram-login', BOT_USERNAME)
@@ -82,13 +58,6 @@ export default {
     }
 
     const onTelegramAuth = async (user) => {
-      console.log('Telegram auth success:', user)
-
-      if (!user || !user.id) {
-        console.error('Invalid user data received')
-        return
-      }
-
       try {
         const response = await fetch('/api/auth/telegram', {
           method: 'POST',
@@ -99,53 +68,46 @@ export default {
         })
 
         const data = await response.json()
-        console.log('Backend response:', data)
 
-        if (data.status === 'success' && data.access_token) {
-          localStorage.setItem('auth_token', data.access_token)
-          router.push('/')
-        } else if (data.status === 'pending') {
-          localStorage.setItem('pending_token', 'true')
-          isPending.value = true
-        } else {
-          alert('Ошибка авторизации: ' + (data.message || 'Неизвестная ошибка'))
+        // ВСЕГДА получаем токен
+        localStorage.setItem('auth_token', data.access_token)
+        // проверяем redirect
+        if (!import.meta.env.DEV) {
+          const urlParams = new URLSearchParams(window.location.search)
+          const redirect = urlParams.get('redirect')
+          
+          if (redirect) {
+            // Если redirect - это полный URL (начинается с http)
+            if (redirect.startsWith('http')) {
+              // Это наш QR-код, переходим на Home с qr параметром
+              router.push({
+                path: '/',
+                query: { qr: redirect }
+              })
+              return
+            } else {
+              // Обычный путь
+              router.push(redirect)
+              return
+            }
+          }
         }
+        
+        // Нет redirect или development - на главную
+        router.push('/')        
+        
       } catch (error) {
-        console.error('Backend error:', error)
-        alert('Ошибка соединения с сервером')
+        console.error('Auth error:', error)
+        alert('Ошибка авторизации')
       }
-    }
-
-    // Функция определения устройства
-    const detectDevice = async () => {
-      // Проверка мобилы
-      const userAgent = navigator.userAgent
-      const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i
-      isMobile.value = mobileRegex.test(userAgent) || ('ontouchstart' in window)
-      
-      // Проверка камеры
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices()
-        hasCamera.value = devices.some(device => device.kind === 'videoinput')
-      } catch (error) {
-        hasCamera.value = false
-      }
-      
-      // Сохраняем в localStorage
-      localStorage.setItem('device_isMobile', JSON.stringify(isMobile.value))
-      localStorage.setItem('device_hasCamera', JSON.stringify(hasCamera.value))
     }
 
     onMounted(() => {
-      checkAuthStatus()
       initTelegramWidget()
-      detectDevice()
-      
       window.onTelegramAuth = onTelegramAuth
     })
 
     return {
-      isPending,
       telegramWidget
     }
   }

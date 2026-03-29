@@ -1,4 +1,6 @@
 import { Controller, Get, Post, Body, Param, Put, Delete, ParseIntPipe, NotFoundException, Logger, UseGuards } from '@nestjs/common';
+import { CreateTelegramUserDto } from './dto/create-telegram-user.dto';
+import { UpdateTelegramUserDto } from './dto/update-telegram-user.dto';
 import { TelegramUsersService } from './telegram-users.service';
 import { TelegramUser } from './entities/telegram-user.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -71,13 +73,11 @@ export class TelegramUsersController {
   // @Post() - обрабатывает POST запросы на /telegram-users
   // Создает новую заявку пользователя
   @Post()
-  async create(@Body() userData: Partial<TelegramUser>): Promise<TelegramUser> {
-    this.logger.log('Выполняется запрос на создание новой заявки пользователя Telegram');
-    this.logger.debug(`Данные для создания: ${JSON.stringify(userData)}`);
+  async create(@Body() userData: CreateTelegramUserDto): Promise<TelegramUser> {
+    // Было: Partial<TelegramUser>
+    // Стало: CreateTelegramUserDto
+    this.logger.log('Создание новой заявки пользователя Telegram');
     
-    // @Body() извлекает данные из тела HTTP запроса
-    // Partial<TelegramUser> означает, что принимаем только часть полей сущности
-    // (не все поля обязательны при создании)
     const createdUser = await this.telegramUsersService.create(userData);
     
     this.logger.log(`Новая заявка создана с ID: ${createdUser.id}`);
@@ -89,7 +89,7 @@ export class TelegramUsersController {
   @Put(':id')
   async update(
     @Param('id', ParseIntPipe) id: number, // ID из URL параметра
-    @Body() userData: Partial<TelegramUser>, // Данные для обновления из тела запроса
+    @Body() userData: UpdateTelegramUserDto, // Данные для обновления из тела запроса
   ): Promise<TelegramUser> {
     this.logger.log(`Выполняется запрос на обновление заявки с ID: ${id}`);
     

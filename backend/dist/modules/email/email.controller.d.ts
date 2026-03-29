@@ -1,21 +1,24 @@
-import type { Request as ExpressRequest } from 'express';
+import { ConfigService } from '@nestjs/config';
+import { EmailAttachmentsService } from './services/email-attachments.service';
 import { ImapService } from './services/imap.service';
-import { Repository } from 'typeorm';
-import { EmailAttachment } from './entities/email-attachment.entity';
-interface RequestWithUser extends ExpressRequest {
+import { EmailAttachmentResponseDto } from './dto/email-attachment-response.dto';
+import { DeleteAttachmentResponseDto } from './dto/delete-attachment-response.dto';
+interface RequestWithUser extends Express.Request {
     user?: {
-        role: string;
         sub: number;
     };
 }
 export declare class EmailController {
     private readonly imapService;
-    private readonly emailAttachmentRepository;
-    constructor(imapService: ImapService, emailAttachmentRepository: Repository<EmailAttachment>);
+    private readonly emailAttachmentsService;
+    private readonly configService;
+    constructor(imapService: ImapService, emailAttachmentsService: EmailAttachmentsService, configService: ConfigService);
     checkEmailNow(): Promise<{
         success: boolean;
         message: string;
     }>;
-    getAllAttachments(request: RequestWithUser): Promise<EmailAttachment[]>;
+    getAllAttachments(request: RequestWithUser): Promise<EmailAttachmentResponseDto[]>;
+    deleteAttachment(id: number, request: RequestWithUser): Promise<DeleteAttachmentResponseDto>;
+    private toResponseDto;
 }
 export {};

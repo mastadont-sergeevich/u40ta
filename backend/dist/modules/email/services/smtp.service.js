@@ -41,44 +41,50 @@ var __importStar = (this && this.__importStar) || (function () {
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var SmtpService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SmtpService = void 0;
 const common_1 = require("@nestjs/common");
+const config_1 = require("@nestjs/config");
 const nodemailer = __importStar(require("nodemailer"));
-let SmtpService = class SmtpService {
+let SmtpService = SmtpService_1 = class SmtpService {
+    configService;
     transporter;
-    constructor() {
+    logger = new common_1.Logger(SmtpService_1.name);
+    constructor(configService) {
+        this.configService = configService;
         this.transporter = nodemailer.createTransport({
-            host: 'smtp.mail.ru',
-            port: 465,
-            secure: true,
+            host: this.configService.get('email.smtp.host'),
+            port: this.configService.get('email.smtp.port'),
+            secure: this.configService.get('email.smtp.secure'),
             auth: {
-                user: 'u40ta@mail.ru',
-                pass: 'YxTNPTFgz3VG8b1nzxPw'
-            }
+                user: this.configService.get('email.smtp.user'),
+                pass: this.configService.get('email.smtp.password'),
+            },
         });
     }
     async sendEmail(to, subject, text, attachments) {
         try {
+            const from = this.configService.get('email.smtp.from');
             const result = await this.transporter.sendMail({
-                from: '"U40TA System" <u40ta@mail.ru>',
+                from,
                 to,
                 subject,
                 text,
                 attachments
             });
-            console.log('✅ Email отправлен:', result.messageId);
+            this.logger.log('Email отправлен:', result.messageId);
             return { success: true, messageId: result.messageId };
         }
         catch (error) {
-            console.error('❌ Ошибка отправки email:', error);
+            this.logger.error('Ошибка отправки email:', error);
             return { success: false, error: error.message };
         }
     }
 };
 exports.SmtpService = SmtpService;
-exports.SmtpService = SmtpService = __decorate([
+exports.SmtpService = SmtpService = SmtpService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [])
+    __metadata("design:paramtypes", [config_1.ConfigService])
 ], SmtpService);
 //# sourceMappingURL=smtp.service.js.map

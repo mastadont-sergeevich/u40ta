@@ -11,15 +11,18 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmailAttachment = void 0;
 const typeorm_1 = require("typeorm");
+const processed_statement_entity_1 = require("../../statements/entities/processed-statement.entity");
 let EmailAttachment = class EmailAttachment {
     id;
     filename;
-    email_from;
-    received_at;
-    doc_type;
+    emailFrom;
+    receivedAt;
+    docType;
+    zavod;
     sklad;
-    in_process;
-    is_inventory;
+    inProcess;
+    isInventory;
+    processedStatements;
 };
 exports.EmailAttachment = EmailAttachment;
 __decorate([
@@ -31,29 +34,37 @@ __decorate([
     __metadata("design:type", String)
 ], EmailAttachment.prototype, "filename", void 0);
 __decorate([
-    (0, typeorm_1.Column)('text', { nullable: true }),
+    (0, typeorm_1.Column)('text', { nullable: true, name: 'email_from' }),
     __metadata("design:type", Object)
-], EmailAttachment.prototype, "email_from", void 0);
+], EmailAttachment.prototype, "emailFrom", void 0);
 __decorate([
-    (0, typeorm_1.CreateDateColumn)(),
+    (0, typeorm_1.CreateDateColumn)({ name: 'received_at' }),
     __metadata("design:type", Date)
-], EmailAttachment.prototype, "received_at", void 0);
+], EmailAttachment.prototype, "receivedAt", void 0);
 __decorate([
-    (0, typeorm_1.Column)('text', { nullable: true }),
+    (0, typeorm_1.Column)({ type: 'varchar', length: 10, nullable: true, name: 'doc_type' }),
     __metadata("design:type", Object)
-], EmailAttachment.prototype, "doc_type", void 0);
+], EmailAttachment.prototype, "docType", void 0);
 __decorate([
-    (0, typeorm_1.Column)('text', { nullable: true }),
+    (0, typeorm_1.Column)({ type: 'integer', nullable: true }),
+    __metadata("design:type", Number)
+], EmailAttachment.prototype, "zavod", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', length: 8, nullable: false }),
     __metadata("design:type", Object)
 ], EmailAttachment.prototype, "sklad", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: 'boolean', default: false }),
+    (0, typeorm_1.Column)({ type: 'boolean', default: false, name: 'in_process' }),
     __metadata("design:type", Boolean)
-], EmailAttachment.prototype, "in_process", void 0);
+], EmailAttachment.prototype, "inProcess", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: 'boolean', default: false }),
+    (0, typeorm_1.Column)({ type: 'boolean', default: false, name: 'is_inventory' }),
     __metadata("design:type", Boolean)
-], EmailAttachment.prototype, "is_inventory", void 0);
+], EmailAttachment.prototype, "isInventory", void 0);
+__decorate([
+    (0, typeorm_1.OneToMany)(() => processed_statement_entity_1.ProcessedStatement, (statement) => statement.emailAttachment),
+    __metadata("design:type", Array)
+], EmailAttachment.prototype, "processedStatements", void 0);
 exports.EmailAttachment = EmailAttachment = __decorate([
     (0, typeorm_1.Entity)('email_attachments')
 ], EmailAttachment);

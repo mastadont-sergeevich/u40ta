@@ -15,65 +15,75 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmailController = void 0;
 const common_1 = require("@nestjs/common");
 const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
+const config_1 = require("@nestjs/config");
+const email_attachments_service_1 = require("./services/email-attachments.service");
 const imap_service_1 = require("./services/imap.service");
-const typeorm_1 = require("typeorm");
-const email_attachment_entity_1 = require("./entities/email-attachment.entity");
-const typeorm_2 = require("@nestjs/typeorm");
+const email_attachment_response_dto_1 = require("./dto/email-attachment-response.dto");
 let EmailController = class EmailController {
     imapService;
-    emailAttachmentRepository;
-    constructor(imapService, emailAttachmentRepository) {
+    emailAttachmentsService;
+    configService;
+    constructor(imapService, emailAttachmentsService, configService) {
         this.imapService = imapService;
-        this.emailAttachmentRepository = emailAttachmentRepository;
+        this.emailAttachmentsService = emailAttachmentsService;
+        this.configService = configService;
     }
     async checkEmailNow() {
         try {
-            console.log('🔄 Ручная проверка почты...');
             await this.imapService.checkForNewEmails();
-            return {
-                success: true,
-                message: 'Проверка почты завершена'
-            };
+            return { success: true, message: 'Проверка почты завершена' };
         }
         catch (error) {
-            console.error('❌ Ошибка ручной проверки почты:', error);
-            return {
-                success: false,
-                message: 'Ошибка проверки почты: ' + error.message
-            };
+            return { success: false, message: `Ошибка проверки почты: ${error.message}` };
         }
     }
     async getAllAttachments(request) {
-        console.log('📄 Запрос списка email-вложений...');
-        const userRole = request.user?.role;
-        if (!userRole) {
-            console.log('⛔ Пользователь без роли');
+        const userId = request.user?.sub;
+        if (!userId)
             return [];
+        const attachments = await this.emailAttachmentsService.getAttachmentsForUser(userId);
+        return attachments.map(this.toResponseDto);
+    }
+    async deleteAttachment(id, request) {
+        const userId = request.user?.sub;
+        if (!userId) {
+            return { success: false, message: 'Пользователь не аутентифицирован' };
         }
-        if (userRole !== 'admin' && userRole !== 'МОЛ') {
-            console.log(`⛔ Доступ запрещён для роли: ${userRole}`);
-            return [];
+        try {
+            await this.emailAttachmentsService.deleteAttachment(id, userId);
+            return {
+                success: true,
+                message: 'Вложение успешно удалено',
+                attachmentId: id,
+            };
         }
-        const query = this.emailAttachmentRepository.createQueryBuilder('attachment');
-        if (userRole === 'МОЛ') {
-            query.where('attachment.doc_type IN (:...types)', {
-                types: ['ОСВ', 'ОС']
-            });
-            console.log('🔹 Фильтр для МОЛ: только ОСВ и ОС');
+        catch (error) {
+            return {
+                success: false,
+                message: error.message || 'Ошибка при удалении вложения',
+                attachmentId: id,
+                error: error.message,
+            };
         }
-        else {
-            console.log('🔹 Админ: все файлы');
-        }
-        const attachments = await query
-            .orderBy('attachment.received_at', 'DESC')
-            .getMany();
-        console.log(`✅ Найдено записей: ${attachments.length}`);
-        return attachments;
+    }
+    toResponseDto(attachment) {
+        const dto = new email_attachment_response_dto_1.EmailAttachmentResponseDto();
+        dto.id = attachment.id;
+        dto.filename = attachment.filename;
+        dto.emailFrom = attachment.emailFrom;
+        dto.receivedAt = attachment.receivedAt;
+        dto.docType = attachment.docType;
+        dto.zavod = attachment.zavod;
+        dto.sklad = attachment.sklad;
+        dto.inProcess = attachment.inProcess;
+        dto.isInventory = attachment.isInventory;
+        return dto;
     }
 };
 exports.EmailController = EmailController;
 __decorate([
-    (0, common_1.Post)('check-now'),
+    (0, common_1.Post)('check'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
@@ -85,11 +95,19 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], EmailController.prototype, "getAllAttachments", null);
+__decorate([
+    (0, common_1.Delete)('attachments/:id'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:returntype", Promise)
+], EmailController.prototype, "deleteAttachment", null);
 exports.EmailController = EmailController = __decorate([
     (0, common_1.Controller)('email'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
-    __param(1, (0, typeorm_2.InjectRepository)(email_attachment_entity_1.EmailAttachment)),
     __metadata("design:paramtypes", [imap_service_1.ImapService,
-        typeorm_1.Repository])
+        email_attachments_service_1.EmailAttachmentsService,
+        config_1.ConfigService])
 ], EmailController);
 //# sourceMappingURL=email.controller.js.map

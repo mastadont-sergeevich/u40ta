@@ -1,19 +1,11 @@
 import { AuthService } from './services/auth.service';
+import { TelegramLoginDto } from './dto/telegram-login.dto';
 export declare class AuthController {
     private readonly authService;
     private readonly logger;
     constructor(authService: AuthService);
-    telegramLogin(telegramData: any): Promise<{
-        status: string;
-        access_token: string;
-    } | {
-        status: string;
-        access_token?: undefined;
-    }>;
+    telegramLogin(telegramData: TelegramLoginDto): Promise<import("./dto/auth-response.dto").AuthResponseDto>;
     devLogin({ userId }: {
         userId: number;
-    }): Promise<{
-        status: string;
-        access_token: string;
-    }>;
+    }): Promise<import("./dto/auth-response.dto").AuthResponseDto>;
 }

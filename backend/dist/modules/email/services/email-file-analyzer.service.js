@@ -38,15 +38,42 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmailFileAnalyzer = void 0;
 const common_1 = require("@nestjs/common");
 const XLSX = __importStar(require("xlsx"));
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
+const logs_service_1 = require("../../logs/logs.service");
 let EmailFileAnalyzer = class EmailFileAnalyzer {
+    logsService;
+    osvColumns = [
+        'Завод',
+        'Склад',
+        'КрТекстМатериала',
+        'Материал',
+        'Партия',
+        'Запас на конец периода'
+    ];
+    osColumns = [
+        'Основное средство',
+        'Название',
+        'Инвентарный номер',
+        'МОЛ'
+    ];
+    constructor(logsService) {
+        this.logsService = logsService;
+    }
     async analyzeExcel(filePath) {
-        console.log(`🔍 Анализируем Excel файл: ${filePath}`);
+        console.log(`Анализируем Excel файл: ${filePath}`);
+        this.logsService.log('backend', null, {
+            action: 'excel_analysis',
+            filePath: filePath,
+            status: 'started'
+        });
         const ext = path.extname(filePath).toLowerCase();
         if (ext !== '.xlsx' && ext !== '.xls') {
             return {
@@ -78,48 +105,20 @@ let EmailFileAnalyzer = class EmailFileAnalyzer {
                 };
             }
             const firstRow = data[0];
-            const requiredColumns = [
-                'Завод',
-                'Склад',
-                'КрТекстМатериала',
-                'Материал',
-                'Партия',
-                'Запас на конец периода'
-            ];
-            const missingColumns = [];
-            for (const column of requiredColumns) {
-                if (!(column in firstRow)) {
-                    missingColumns.push(column);
-                }
+            const hasOsvColumns = this.hasRequiredColumns(firstRow, this.osvColumns);
+            if (hasOsvColumns) {
+                return await this.analyzeOsvDocument(data);
             }
-            if (missingColumns.length > 0) {
-                return {
-                    isValid: false,
-                    error: `Некорректная структура данных. Отсутствуют колонки: ${missingColumns.join(', ')}`
-                };
-            }
-            let sklad = '';
-            for (const row of data) {
-                const rowSklad = row['Склад'];
-                if (rowSklad && typeof rowSklad === 'string' && rowSklad.trim() !== '') {
-                    sklad = rowSklad.trim();
-                    break;
-                }
-            }
-            if (!sklad) {
-                return {
-                    isValid: false,
-                    error: 'Не удалось определить склад (колонка "Склад" пустая во всех строках)'
-                };
+            const hasOsColumns = this.hasRequiredColumns(firstRow, this.osColumns);
+            if (hasOsColumns) {
+                return await this.analyzeOsDocument(data);
             }
             return {
-                isValid: true,
-                docType: 'ОСВ',
-                sklad: sklad
+                isValid: false,
+                error: `Некорректная структура данных. Файл должен содержать колонки для ОСВ (${this.osvColumns.join(', ')}) или для ОС (${this.osColumns.join(', ')})`
             };
         }
         catch (error) {
-            console.error('❌ Ошибка анализа Excel файла:', error);
             let errorMessage = 'Ошибка чтения файла';
             if (error.message.includes('not a valid zip file')) {
                 errorMessage = 'Файл поврежден или не является Excel-файлом';
@@ -127,15 +126,102 @@ let EmailFileAnalyzer = class EmailFileAnalyzer {
             else if (error.message.includes('file not found')) {
                 errorMessage = 'Файл не найден';
             }
+            console.error(`Ошибка анализа Excel файла: ${error.message}`, error.stack);
+            this.logsService.log('backend', null, {
+                action: 'excel_analysis',
+                result: 'error',
+                filePath,
+                error: errorMessage
+            });
             return {
                 isValid: false,
                 error: `${errorMessage}: ${error.message}`
             };
         }
     }
+    hasRequiredColumns(row, requiredColumns) {
+        for (const column of requiredColumns) {
+            if (!(column in row)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    async analyzeOsvDocument(data) {
+        let zavod = 0;
+        let sklad = '';
+        for (const row of data) {
+            const rowZavod = row['Завод'];
+            const rowSklad = row['Склад'];
+            if (typeof rowZavod === 'number') {
+                zavod = rowZavod;
+            }
+            else if (typeof rowZavod === 'string') {
+                const parsed = parseInt(rowZavod.trim(), 10);
+                zavod = isNaN(parsed) ? 0 : parsed;
+            }
+            else {
+                zavod = Number(rowZavod) || 0;
+            }
+            if (rowSklad && typeof rowSklad === 'string' && rowSklad.trim() !== '') {
+                sklad = rowSklad.trim();
+                break;
+            }
+        }
+        if (!sklad) {
+            return {
+                isValid: false,
+                error: 'Не удалось определить склад (колонка "Склад" пустая во всех строках)'
+            };
+        }
+        this.logsService.log('backend', null, {
+            action: 'excel_analysis',
+            result: 'success',
+            docType: 'ОСВ',
+            zavod,
+            sklad
+        });
+        return {
+            isValid: true,
+            docType: 'ОСВ',
+            zavod: zavod,
+            sklad: sklad
+        };
+    }
+    async analyzeOsDocument(data) {
+        let sklad = '';
+        for (const row of data) {
+            const rowMol = row['МОЛ'];
+            if (rowMol !== undefined && rowMol !== null && rowMol !== '') {
+                sklad = String(rowMol).trim();
+                if (sklad !== '') {
+                    break;
+                }
+            }
+        }
+        if (!sklad) {
+            return {
+                isValid: false,
+                error: 'Не удалось определить склад (колонка "МОЛ" пустая во всех строках)'
+            };
+        }
+        this.logsService.log('backend', null, {
+            action: 'excel_analysis',
+            result: 'success',
+            docType: 'ОС',
+            sklad
+        });
+        return {
+            isValid: true,
+            docType: 'ОС',
+            zavod: 0,
+            sklad: sklad
+        };
+    }
 };
 exports.EmailFileAnalyzer = EmailFileAnalyzer;
 exports.EmailFileAnalyzer = EmailFileAnalyzer = __decorate([
-    (0, common_1.Injectable)()
+    (0, common_1.Injectable)(),
+    __metadata("design:paramtypes", [logs_service_1.LogsService])
 ], EmailFileAnalyzer);
 //# sourceMappingURL=email-file-analyzer.service.js.map

@@ -12,23 +12,29 @@ const typeorm_1 = require("@nestjs/typeorm");
 const jwt_auth_module_1 = require("../auth/jwt-auth.module");
 const app_events_module_1 = require("../app-events/app-events.module");
 const statements_controller_1 = require("./statements.controller");
+const statement_service_1 = require("./services/statement.service");
 const statement_parser_service_1 = require("./services/statement-parser.service");
+const statement_objects_service_1 = require("./services/statement-objects.service");
 const processed_statement_entity_1 = require("./entities/processed-statement.entity");
 const email_attachment_entity_1 = require("../email/entities/email-attachment.entity");
+const object_entity_1 = require("../objects/entities/object.entity");
 let StatementsModule = class StatementsModule {
 };
 exports.StatementsModule = StatementsModule;
 exports.StatementsModule = StatementsModule = __decorate([
     (0, common_1.Module)({
         imports: [
-            typeorm_1.TypeOrmModule.forFeature([processed_statement_entity_1.ProcessedStatement]),
-            typeorm_1.TypeOrmModule.forFeature([email_attachment_entity_1.EmailAttachment,]),
+            typeorm_1.TypeOrmModule.forFeature([
+                processed_statement_entity_1.ProcessedStatement,
+                email_attachment_entity_1.EmailAttachment,
+                object_entity_1.InventoryObject,
+            ]),
             app_events_module_1.AppEventsModule,
             jwt_auth_module_1.JwtAuthModule,
         ],
         controllers: [statements_controller_1.StatementsController],
-        providers: [statement_parser_service_1.StatementParserService],
-        exports: [statement_parser_service_1.StatementParserService]
+        providers: [statement_service_1.StatementService, statement_parser_service_1.StatementParserService, statement_objects_service_1.StatementObjectsService],
+        exports: [statement_service_1.StatementService, statement_objects_service_1.StatementObjectsService],
     })
 ], StatementsModule);
 //# sourceMappingURL=statements.module.js.map

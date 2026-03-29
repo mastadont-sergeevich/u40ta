@@ -11,8 +11,50 @@ const common_1 = require("@nestjs/common");
 const rxjs_1 = require("rxjs");
 let AppEventsService = class AppEventsService {
     eventSubject = new rxjs_1.Subject();
-    notifyAll() {
-        this.eventSubject.next({ message: 'update' });
+    notifyStatementLoaded() {
+        this.eventSubject.next({
+            type: 'statement-loaded',
+            message: 'Новая ведомость загружена'
+        });
+    }
+    notifyStatementDeleted(attachmentId) {
+        this.eventSubject.next({
+            type: 'statement-deleted',
+            message: 'Ведомость удалена',
+            data: { attachmentId }
+        });
+    }
+    notifyStatementActiveChanged(attachmentId, zavod, sklad) {
+        this.eventSubject.next({
+            type: 'statement-active-changed',
+            message: `Ведомость ${attachmentId} стала активной у другого пользователя`,
+            data: {
+                attachmentId,
+                zavod,
+                sklad
+            }
+        });
+    }
+    notifyStatementUpdated(attachmentId) {
+        this.eventSubject.next({
+            type: 'statement-updated',
+            message: `Ведомость ${attachmentId} обновлена`,
+            data: { attachmentId }
+        });
+    }
+    notifyAccessChanged(userId) {
+        this.eventSubject.next({
+            type: 'access-changed',
+            message: 'Права доступа изменены',
+            data: { userId }
+        });
+    }
+    notifyUserDataUpdated(userId) {
+        this.eventSubject.next({
+            type: 'user-data-updated',
+            message: 'Данные пользователя обновлены',
+            data: { userId }
+        });
     }
     getEventStream() {
         return this.eventSubject.asObservable();

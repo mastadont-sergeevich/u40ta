@@ -24,6 +24,7 @@ let ProcessedStatement = class ProcessedStatement {
     buh_name;
     have_object;
     is_ignore;
+    is_excess;
 };
 exports.ProcessedStatement = ProcessedStatement;
 __decorate([
@@ -40,11 +41,11 @@ __decorate([
     __metadata("design:type", Number)
 ], ProcessedStatement.prototype, "emailAttachmentId", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: 'varchar', length: 10, nullable: true }),
-    __metadata("design:type", String)
+    (0, typeorm_1.Column)({ type: 'integer' }),
+    __metadata("design:type", Number)
 ], ProcessedStatement.prototype, "zavod", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: 'varchar', length: 10 }),
+    (0, typeorm_1.Column)({ type: 'varchar', length: 8 }),
     __metadata("design:type", String)
 ], ProcessedStatement.prototype, "sklad", void 0);
 __decorate([
@@ -52,15 +53,15 @@ __decorate([
     __metadata("design:type", String)
 ], ProcessedStatement.prototype, "doc_type", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: 'varchar', length: 255, nullable: true }),
+    (0, typeorm_1.Column)({ type: 'varchar', length: 255 }),
     __metadata("design:type", String)
 ], ProcessedStatement.prototype, "inv_number", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: 'varchar', length: 255, nullable: true }),
+    (0, typeorm_1.Column)({ type: 'varchar', length: 255 }),
     __metadata("design:type", String)
 ], ProcessedStatement.prototype, "party_number", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: 'text', nullable: true }),
+    (0, typeorm_1.Column)({ type: 'text' }),
     __metadata("design:type", String)
 ], ProcessedStatement.prototype, "buh_name", void 0);
 __decorate([
@@ -71,6 +72,10 @@ __decorate([
     (0, typeorm_1.Column)({ type: 'boolean', default: false }),
     __metadata("design:type", Boolean)
 ], ProcessedStatement.prototype, "is_ignore", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'boolean', default: false }),
+    __metadata("design:type", Boolean)
+], ProcessedStatement.prototype, "is_excess", void 0);
 exports.ProcessedStatement = ProcessedStatement = __decorate([
     (0, typeorm_1.Entity)('processed_statements')
 ], ProcessedStatement);

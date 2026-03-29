@@ -1,13 +1,76 @@
 import { Injectable } from '@nestjs/common';
 import { Subject, Observable } from 'rxjs';
 
+// Определяем тип события
+interface AppEvent {
+  message: string;
+  type?: string;
+  data?: any;
+}
+
 @Injectable()
 export class AppEventsService {
-  private eventSubject = new Subject<{ message: string }>();
+  
+  private eventSubject = new Subject<AppEvent>();
 
-  // Для отправки событий всем клиентам
-  notifyAll(): void {
-    this.eventSubject.next({ message: 'update' });
+  // Для EmailAttachmentsSection.vue (новое вложение)
+  notifyStatementLoaded(): void {
+    this.eventSubject.next({ 
+      type: 'statement-loaded',
+      message: 'Новая ведомость загружена'
+    });
+  }
+
+  // Для EmailAttachmentsSection.vue и StatementPage.vue (удаление ведомости)
+  notifyStatementDeleted(attachmentId: number): void {
+    this.eventSubject.next({ 
+      type: 'statement-deleted',
+      message: 'Ведомость удалена',
+      data: { attachmentId }
+    });
+  }
+
+  // Для EmailAttachmentsSection.vue и StatementPage.vue (смена активной ведомости)
+  notifyStatementActiveChanged(
+    attachmentId: number, 
+    zavod: number, 
+    sklad: string
+  ): void {
+    this.eventSubject.next({
+      type: 'statement-active-changed',
+      message: `Ведомость ${attachmentId} стала активной у другого пользователя`,
+      data: { 
+        attachmentId,
+        zavod,
+        sklad
+      }
+    });
+  }
+  // Для StatementPage.vue (обновление данных ведомости)
+  notifyStatementUpdated(attachmentId: number): void {
+    this.eventSubject.next({
+      type: 'statement-updated',
+      message: `Ведомость ${attachmentId} обновлена`,
+      data: { attachmentId }
+    });
+  }
+
+  // Для Home.vue (изменение прав доступа)
+  notifyAccessChanged(userId: number): void {
+    this.eventSubject.next({ 
+      type: 'access-changed',
+      message: 'Права доступа изменены',
+      data: { userId }
+    });
+  }
+
+  // Для Home.vue (обновление данных пользователя)
+  notifyUserDataUpdated(userId: number): void {
+    this.eventSubject.next({ 
+      type: 'user-data-updated',
+      message: 'Данные пользователя обновлены',
+      data: { userId }
+    });
   }
 
   // Для получения потока событий (используется в контроллере)

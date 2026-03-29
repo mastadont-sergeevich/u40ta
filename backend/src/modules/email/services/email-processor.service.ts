@@ -1,106 +1,170 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import * as fs from 'fs';
 import { EmailAttachment } from '../entities/email-attachment.entity';
-import { AppEventsService } from '../../app-events/app-events.service'; // SSE
+import { AppEventsService } from '../../app-events/app-events.service';
 import { SmtpService } from './smtp.service';
 import { EmailFileAnalyzer } from './email-file-analyzer.service';
+import { EmailStorageService } from './email-storage.service';
+import { LogsService } from '../../logs/logs.service';
 
 @Injectable()
 export class EmailProcessor {
+  private readonly logger = new Logger(EmailFileAnalyzer.name);
   constructor(
     @InjectRepository(EmailAttachment)
     private attachmentsRepo: Repository<EmailAttachment>,
     private appEventsService: AppEventsService,
     private smtpService: SmtpService,
     private emailFileAnalyzer: EmailFileAnalyzer,
+    private emailStorageService: EmailStorageService,
+    private logsService: LogsService,
   ) {}
 
   async analyzeAndSaveAttachment(
-    filePath: string,
-    filename: string,
+    fileContent: Buffer,
+    originalFilename: string,
     emailFrom: string,
     emailSubject?: string
   ): Promise<EmailAttachment | null> {
-    console.log(`Обрабатываем вложение: ${filename}`);
+    this.logger.log(`Обрабатываем вложение: ${originalFilename}`);
     
-      // Определяем инвентаризацию по теме
     const isInventory = emailSubject?.toLowerCase().includes('инвентаризац') || false;
 
     try {
-      // 1. Анализируем файл
+      // 1. Сохраняем файл на диск через EmailStorageService
+      const { filePath, uniqueFilename } = await this.emailStorageService.saveFile(
+        originalFilename,
+        fileContent
+      );
+
+      // 2. Анализируем файл
       const analysis = await this.emailFileAnalyzer.analyzeExcel(filePath);
       
-      // 2. Если файл валидный
+      // 3. Если файл валидный - сохраняем в БД
       if (analysis.isValid) {
-        // Сохраняем в БД
-        const attachmentData = {
-          filename: filename,
-          email_from: emailFrom,
-          received_at: new Date(),
-          doc_type: analysis.docType,
-          sklad: analysis.sklad,
-          is_inventory: isInventory
-        };
-        
-        const savedRecord = await this.attachmentsRepo.save(attachmentData);
-        this.appEventsService.notifyAll();
-        console.log(`Файл принят: ${filename}`);
-        console.log('SSE: отправлено обновление списка файлов');
-        
-        // Отправляем положительный ответ
-        const acceptText = `Ваш файл "${filename}" принят.\n\n` +
-                          `Тип документа: ${analysis.docType}\n` +
-                          `Склад: ${analysis.sklad}\n\n`;
-        
-        await this.smtpService.sendEmail(
+        return await this.saveValidAttachment(
+          uniqueFilename,
           emailFrom,
-          `Файл принят: ${filename}`,
-          acceptText
+          analysis,
+          isInventory
         );
-        
-        return savedRecord;
-        
-      } else {
-        // 3. Если файл кривой
-        console.log(`Файл отклонён: ${filename}, причина: ${analysis.error}`);
-        
-        // Отправляем отрицательный ответ
-        const rejectText = `Извините, Ваш файл "${filename}" не принят.\n\n` +
-                          `Причина: ${analysis.error}\n\n`;
-        
-        await this.smtpService.sendEmail(
-          emailFrom,
-          `Файл отклонён: ${filename}`,
-          rejectText
-        );
-        
-        // Удаляем файл с диска
-        try {
-          fs.unlinkSync(filePath);
-          console.log(`Файл удалён: ${filePath}`);
-        } catch (deleteError) {
-          console.error('Ошибка удаления файла:', deleteError);
-        }
-        
-        return null;
-      }
+      } 
+      
+      // 4. Если файл невалидный - удаляем и отправляем уведомление
+      await this.handleInvalidAttachment(
+        uniqueFilename, 
+        emailFrom, 
+        analysis.error
+      );
+      return null;
       
     } catch (error) {
-      console.error(`Ошибка обработки файла ${filename}:`, error);
-      
-      // Отправляем сообщение об ошибке
-      const errorText = `При обработке вашего файла "${filename}" возникла непредвиденная ошибка.\n\n` +
-                       `Ошибка: ${error.message}\n\n`;
-      
-      await this.smtpService.sendEmail(
-        emailFrom,
-        `Ошибка обработки файла: ${filename}`,
-        errorText
-      );
-      
+      await this.handleProcessingError(originalFilename, emailFrom, error);
       throw error;
     }
+  }
+
+  private async saveValidAttachment(
+    filename: string,
+    emailFrom: string,
+    analysis: { docType?: string; zavod?: number; sklad?: string },
+    isInventory: boolean
+  ): Promise<EmailAttachment> {
+    const attachmentData = {
+      filename: filename,
+      emailFrom: emailFrom,
+      receivedAt: new Date(),
+      docType: analysis.docType,
+      zavod: analysis.zavod,
+      sklad: analysis.sklad,
+      isInventory: isInventory,
+      inProcess: false // По умолчанию
+    };
+    
+    const savedRecord = await this.attachmentsRepo.save(attachmentData);
+    
+    // SSE уведомление о новой ведомости
+    this.appEventsService.notifyStatementLoaded();
+    this.logger.log(`Файл принят: ${filename}`);
+    this.logsService.log('backend', null, {
+      action: 'email_attachment_accepted',
+      filename: filename,
+      emailFrom: emailFrom,
+      docType: analysis.docType,
+      zavod: analysis.zavod,
+      sklad: analysis.sklad,
+      isInventory: isInventory
+    });    
+    
+    // Отправляем положительный ответ
+    const acceptText = `Ваш файл "${filename}" принят.\n\n` +
+                      `Тип документа: ${analysis.docType}\n` +
+                      `Склад: ${analysis.sklad}\n\n`;
+    
+    await this.smtpService.sendEmail(
+      emailFrom,
+      `Файл принят: ${filename}`,
+      acceptText
+    );
+    
+    return savedRecord;
+  }
+
+  private async handleInvalidAttachment(
+    filename: string,
+    emailFrom: string,
+    errorMessage?: string
+  ): Promise<void> {
+    this.logger.log(`Файл отклонён: ${filename}, причина: ${errorMessage}`);
+    this.logsService.log('backend', null, {
+      action: 'email_attachment_rejected',
+      filename: filename,
+      emailFrom: emailFrom,
+      reason: errorMessage
+    });    
+    
+    // Удаляем файл с диска
+    try {
+      await this.emailStorageService.deleteFile(filename);
+      this.logger.log(`Файл удалён: ${filename}`);
+    } catch (deleteError) {
+      this.logger.log('Ошибка удаления файла:', deleteError);
+    }
+    
+    // Отправляем отрицательный ответ
+    const rejectText = `Извините, Ваш файл "${filename}" не принят.\n\n` +
+                      `Причина: ${errorMessage}\n\n`;
+    
+    await this.smtpService.sendEmail(
+      emailFrom,
+      `Файл отклонён: ${filename}`,
+      rejectText
+    );
+  }
+
+  private async handleProcessingError(
+    filename: string,
+    emailFrom: string,
+    error: Error
+  ): Promise<void> {
+    this.logger.log(`Ошибка обработки файла ${filename}:`, error);
+    this.logsService.log('backend', null, {
+      action: 'email_processing_error',
+      filename: filename,
+      emailFrom: emailFrom,
+      error: error.message,
+      stack: error.stack
+    });    
+    
+    // Отправляем сообщение об ошибке
+    const errorText = `При обработке вашего файла "${filename}" возникла непредвиденная ошибка.\n\n` +
+                     `Ошибка: ${error.message}\n\n`;
+    
+    await this.smtpService.sendEmail(
+      emailFrom,
+      `Ошибка обработки файла: ${filename}`,
+      errorText
+    );
   }
 }

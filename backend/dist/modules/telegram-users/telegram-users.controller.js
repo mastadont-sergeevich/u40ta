@@ -15,6 +15,8 @@ var TelegramUsersController_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TelegramUsersController = void 0;
 const common_1 = require("@nestjs/common");
+const create_telegram_user_dto_1 = require("./dto/create-telegram-user.dto");
+const update_telegram_user_dto_1 = require("./dto/update-telegram-user.dto");
 const telegram_users_service_1 = require("./telegram-users.service");
 const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
 let TelegramUsersController = TelegramUsersController_1 = class TelegramUsersController {
@@ -49,8 +51,7 @@ let TelegramUsersController = TelegramUsersController_1 = class TelegramUsersCon
         return user;
     }
     async create(userData) {
-        this.logger.log('Выполняется запрос на создание новой заявки пользователя Telegram');
-        this.logger.debug(`Данные для создания: ${JSON.stringify(userData)}`);
+        this.logger.log('Создание новой заявки пользователя Telegram');
         const createdUser = await this.telegramUsersService.create(userData);
         this.logger.log(`Новая заявка создана с ID: ${createdUser.id}`);
         return createdUser;
@@ -92,7 +93,7 @@ __decorate([
     (0, common_1.Post)(),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [create_telegram_user_dto_1.CreateTelegramUserDto]),
     __metadata("design:returntype", Promise)
 ], TelegramUsersController.prototype, "create", null);
 __decorate([
@@ -100,7 +101,7 @@ __decorate([
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:paramtypes", [Number, update_telegram_user_dto_1.UpdateTelegramUserDto]),
     __metadata("design:returntype", Promise)
 ], TelegramUsersController.prototype, "update", null);
 __decorate([

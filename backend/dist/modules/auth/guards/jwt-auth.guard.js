@@ -34,7 +34,7 @@ let JwtAuthGuard = JwtAuthGuard_1 = class JwtAuthGuard {
                     const payload = this.jwtService.decode(token);
                     if (payload) {
                         request.user = payload;
-                        this.logger.debug(`Dev режим: пользователь ID ${payload.sub}, роль ${payload.role}`);
+                        this.logger.debug(`Dev режим: пользователь ID ${payload.sub}`);
                     }
                 }
                 catch (error) {
@@ -52,7 +52,7 @@ let JwtAuthGuard = JwtAuthGuard_1 = class JwtAuthGuard {
                 secret: this.configService.get('JWT_SECRET'),
             });
             request.user = payload;
-            this.logger.debug(`Успешная проверка JWT для пользователя ID: ${payload.sub}, роль: ${payload.role}`);
+            this.logger.debug(`Успешная проверка JWT для пользователя ID: ${payload.sub}`);
             return true;
         }
         catch (error) {

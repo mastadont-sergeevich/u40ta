@@ -1,86 +1,141 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import Imap from 'imap';
 import { simpleParser } from 'mailparser';
-import * as fs from 'fs';
-import * as path from 'path';
 import { EmailProcessor } from './email-processor.service';
+import { LogsService } from '../../logs/logs.service';
 
 @Injectable()
 export class ImapService {
   private imap: Imap;
+  private readonly logger = new Logger(ImapService.name);
 
-  constructor(private emailProcessor: EmailProcessor) {}
+  constructor(
+    private emailProcessor: EmailProcessor,
+    private configService: ConfigService,
+    private logsService: LogsService,
+  ) {}
 
-  public async checkForNewEmails() {
-    console.log('Ручная проверка почты...');
+  public async checkForNewEmails(): Promise<void> {
+    this.logger.log('Проверка почты...');
+    
+    // Проверяем наличие обязательных параметров
+    const user = this.configService.get('email.imap.user');
+    const password = this.configService.get('email.imap.password');
+    const host = this.configService.get('email.imap.host');
+    const port = this.configService.get('email.imap.port');
+    
+    if (!user || !password) {
+      const errorMsg = 'Отсутствуют учетные данные для IMAP. Проверьте переменные окружения EMAIL_IMAP_USER и EMAIL_IMAP_PASSWORD';
+      this.logger.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+    
+    if (!host) {
+      const errorMsg = 'Отсутствует хост IMAP. Проверьте переменную EMAIL_IMAP_HOST';
+      this.logger.error(errorMsg);
+      throw new Error(errorMsg);
+    }
     
     return new Promise((resolve, reject) => {
-      this.imap = new Imap({
-        user: 'u40ta@mail.ru',
-        password: 'YxTNPTFgz3VG8b1nzxPw',
-        host: 'imap.mail.ru',
-        port: 993,
-        tls: true,
+      const imapConfig = {
+        user: user,
+        password: password,
+        host: host,
+        port: port,
+        tls: this.configService.get('email.imap.tls') ?? true,
         tlsOptions: { rejectUnauthorized: false }
-      });
+      };
+      
+      this.imap = new Imap(imapConfig);
 
       this.imap.once('ready', async () => {
-        console.log('IMAP подключен к Mail.ru');
+        this.logger.log('IMAP подключен');
         try {
           await this.processNewEmails();
           this.imap.end();
-          resolve(null);
+          resolve();
         } catch (error) {
+          this.logger.error('Ошибка при обработке писем:', error);
           this.imap.end();
           reject(error);
         }
       });
 
       this.imap.once('error', (err) => {
-        console.error('IMAP ошибка:', err.message);
-        reject(new Error(`Ошибка подключения: ${err.message}`));
+        this.logger.error('IMAP ошибка:', err);
+        this.logger.error('Тип ошибки:', err.name);
+        this.logger.error('Сообщение ошибки:', err.message);
+        this.logger.error('Полный стек:', err.stack);
+        
+        // Формируем понятное сообщение об ошибке
+        let errorMessage = err.message;
+        if (err.message && err.message.toLowerCase().includes('authentication')) {
+          errorMessage = 'Ошибка аутентификации. Проверьте логин и пароль.';
+        } else if (err.message && err.message.toLowerCase().includes('connect')) {
+          errorMessage = 'Не удалось подключиться к серверу. Проверьте хост и порт.';
+        } else if (err.message && err.message.toLowerCase().includes('timeout')) {
+          errorMessage = 'Таймаут подключения. Проверьте сетевое соединение.';
+        } else if (!err.message || err.message === '') {
+          errorMessage = 'Неизвестная ошибка подключения. Проверьте настройки IMAP.';
+        }
+        this.logsService.log('backend', null, {
+          action: 'imap_error',
+          error: errorMessage,
+          originalError: err.message
+        });        
+        
+        reject(new Error(`Ошибка подключения: ${errorMessage}`));
       });
 
-      console.log('Подключаемся к IMAP...');
+      this.logger.log('Подключаемся к IMAP...');
       this.imap.connect();
     });
   }
 
-  private async processNewEmails() {
+  private async processNewEmails(): Promise<void> {
     return new Promise((resolve, reject) => {
       this.imap.openBox('INBOX', false, (err, box) => {
         if (err) {
+          this.logger.error('Ошибка открытия INBOX:', err);
           reject(new Error(`Ошибка открытия INBOX: ${err.message}`));
           return;
         }
-
+        
         this.imap.search(['UNSEEN'], (err, results) => {
           if (err) {
+            this.logger.error('Ошибка поиска писем:', err);
             reject(new Error(`Ошибка поиска писем: ${err.message}`));
             return;
           }
           
-          if (results.length > 0) {
-            console.log(`Найдено новых писем: ${results.length}`);
+          if (results && results.length > 0) {
+            this.logger.log(`Найдено новых писем: ${results.length}`);
             this.processEmailsSequentially(results)
               .then(resolve)
               .catch(reject);
           } else {
-            console.log('Новых писем нет');
-            resolve(null);
+            this.logger.log('Новых писем нет');
+            resolve();
           }
         });
       });
     });
   }
 
-  private async processEmailsSequentially(uids: number[]) {
+  private async processEmailsSequentially(uids: number[]): Promise<void> {
     for (const uid of uids) {
-      await this.processEmail(uid);
+      try {
+        this.logger.log(`Обработка письма UID: ${uid}`);
+        await this.processEmail(uid);
+      } catch (error) {
+        this.logger.error(`Ошибка обработки письма ${uid}:`, error);
+        // Продолжаем обработку следующих писем даже если одно упало
+      }
     }
   }
 
-  private async processEmail(uid: number) {
+  private async processEmail(uid: number): Promise<void> {
     return new Promise((resolve, reject) => {
       const fetch = this.imap.fetch(uid, { 
         bodies: '', 
@@ -103,14 +158,14 @@ export class ImapService {
               // Помечаем письмо как прочитанное
               this.imap.addFlags(uid, ['\\Seen'], (err) => {
                 if (err) {
-                  console.error('Ошибка пометки письма:', err);
+                  this.logger.error('Ошибка пометки письма:', err);
                 } else {
-                  console.log('Письмо помечено как прочитанное');
+                  this.logger.log(`Письмо ${uid} помечено как прочитанное`);
                 }
-                resolve(parsed);
+                resolve();
               });
             } catch (error) {
-              console.error('Ошибка парсинга письма:', error);
+              this.logger.error('Ошибка парсинга письма:', error);
               reject(error);
             }
           });
@@ -118,63 +173,45 @@ export class ImapService {
       });
       
       fetch.once('error', (err) => {
-        console.error('Ошибка получения письма:', err);
+        this.logger.error('Ошибка получения письма:', err);
         reject(err);
       });
     });
   }
 
-  private async handleParsedEmail(parsedEmail: any) {
-    console.log('Обрабатываем письмо от:', parsedEmail.from?.value?.[0]?.address);
+  private async handleParsedEmail(parsedEmail: any): Promise<void> {
+    const fromAddress = parsedEmail.from?.value?.[0]?.address;
+    this.logger.log('Обрабатываем письмо от:', fromAddress);
     
     if (!parsedEmail.attachments || parsedEmail.attachments.length === 0) {
-      console.log('Вложений нет, пропускаем');
+      this.logger.log('Вложений нет, пропускаем');
       return;
     }
 
-    console.log(`Найдено вложений: ${parsedEmail.attachments.length}`);
+    this.logger.log(`Найдено вложений: ${parsedEmail.attachments.length}`);
     
     // Обрабатываем каждое вложение
     for (const attachment of parsedEmail.attachments) {
-      await this.processAttachment(attachment, parsedEmail);
+      try {
+        this.logger.log(`Обработка вложения: ${attachment.filename}, размер: ${attachment.size} байт`);
+        await this.processAttachment(attachment, parsedEmail);
+      } catch (error) {
+        this.logger.error(`Ошибка обработки вложения ${attachment.filename}:`, error);
+        // Продолжаем обработку следующих вложений даже если одно упало
+      }
     }
   }
 
   /**
-   * Обрабатывает отдельное вложение: сохраняет файл и запускает анализ
+   * Обрабатывает отдельное вложение
    */
-  private async processAttachment(attachment: any, email: any) {
-    try {
-      // 1. Сохраняем файл на диск
-      const filePath = await this.saveFileToDisk(attachment);
-      
-      // 2. Вызываем сервис анализа для создания записи в БД
-      await this.emailProcessor.analyzeAndSaveAttachment(
-        filePath,
-        attachment.filename,
-        email.from?.value?.[0]?.address,
-        email.subject // передаем тему письма для определения ключевого слова "Инвентаризация"
-      );
-      
-    } catch (error) {
-      console.error('Ошибка обработки вложения:', error);
-    }
-  }
-
-  /**
-   * Сохраняет файл вложения на диск
-   */
-  private async saveFileToDisk(attachment: any): Promise<string> {
-    //const attachmentsDir = '/email-attachments';
-    //const attachmentsDir = path.join(process.cwd(), 'email-attachments');
-    const attachmentsDir = path.join(process.cwd(), '..', 'email-attachments');
-    const filename = attachment.filename;
-    const filePath = path.join(attachmentsDir, filename);
-
-    //await fs.promises.mkdir(attachmentsDir, { recursive: true });
-    await fs.promises.writeFile(filePath, attachment.content);
-    console.log('Сохранен файл:', filename);
-
-    return filePath;
+  private async processAttachment(attachment: any, email: any): Promise<void> {
+    // Вызываем сервис анализа с содержимым файла и метаданными
+    await this.emailProcessor.analyzeAndSaveAttachment(
+      attachment.content,    // Передаём Buffer напрямую
+      attachment.filename,   // Оригинальное имя файла
+      email.from?.value?.[0]?.address,
+      email.subject
+    );
   }
 }

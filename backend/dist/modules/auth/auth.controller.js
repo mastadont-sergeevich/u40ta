@@ -16,6 +16,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthController = void 0;
 const common_1 = require("@nestjs/common");
 const auth_service_1 = require("./services/auth.service");
+const telegram_login_dto_1 = require("./dto/telegram-login.dto");
 let AuthController = AuthController_1 = class AuthController {
     authService;
     logger = new common_1.Logger(AuthController_1.name);
@@ -23,25 +24,18 @@ let AuthController = AuthController_1 = class AuthController {
         this.authService = authService;
     }
     async telegramLogin(telegramData) {
-        this.logger.log(`Получен запрос на авторизацию через Telegram для пользователя: ${telegramData.first_name}`);
+        this.logger.log(`Telegram авторизация: ${telegramData.first_name}`);
         const result = await this.authService.telegramLogin(telegramData);
-        if (result.status === 'success') {
-            this.logger.log(`Успешная авторизация пользователя: ${telegramData.first_name}`);
-            this.logger.debug(`JWT токен сгенерирован`);
-        }
-        else {
-            this.logger.log(`Пользователь ожидает одобрения: ${telegramData.first_name}`);
-        }
+        this.logger.log(`Авторизация успешна: ${telegramData.first_name}`);
         return result;
     }
     async devLogin({ userId }) {
         if (process.env.NODE_ENV === 'production') {
-            this.logger.warn('Попытка использования dev-login в продакшене');
+            this.logger.warn('Попытка dev-login в продакшене');
             throw new common_1.NotFoundException('Метод не найден');
         }
-        this.logger.log(`Получен запрос на dev-авторизацию для пользователя ID: ${userId}`);
+        this.logger.log(`Dev-авторизация: ${userId}`);
         const result = await this.authService.devLogin(userId);
-        this.logger.log(`Dev-авторизация завершена для пользователя ID: ${userId}`);
         return result;
     }
 };
@@ -50,7 +44,7 @@ __decorate([
     (0, common_1.Post)('telegram'),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [telegram_login_dto_1.TelegramLoginDto]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "telegramLogin", null);
 __decorate([

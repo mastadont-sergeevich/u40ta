@@ -3,7 +3,7 @@ export declare class ProcessedStatement {
     id: number;
     emailAttachment: EmailAttachment;
     emailAttachmentId: number;
-    zavod: string;
+    zavod: number;
     sklad: string;
     doc_type: string;
     inv_number: string;
@@ -11,4 +11,5 @@ export declare class ProcessedStatement {
     buh_name: string;
     have_object: boolean;
     is_ignore: boolean;
+    is_excess: boolean;
 }

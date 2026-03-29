@@ -1,91 +1,101 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
+var ImapService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ImapService = void 0;
 const common_1 = require("@nestjs/common");
+const config_1 = require("@nestjs/config");
 const imap_1 = __importDefault(require("imap"));
 const mailparser_1 = require("mailparser");
-const fs = __importStar(require("fs"));
-const path = __importStar(require("path"));
 const email_processor_service_1 = require("./email-processor.service");
-let ImapService = class ImapService {
+const logs_service_1 = require("../../logs/logs.service");
+let ImapService = ImapService_1 = class ImapService {
     emailProcessor;
+    configService;
+    logsService;
     imap;
-    constructor(emailProcessor) {
+    logger = new common_1.Logger(ImapService_1.name);
+    constructor(emailProcessor, configService, logsService) {
         this.emailProcessor = emailProcessor;
+        this.configService = configService;
+        this.logsService = logsService;
     }
     async checkForNewEmails() {
-        console.log('🔄 Ручная проверка почты...');
+        this.logger.log('Проверка почты...');
+        const user = this.configService.get('email.imap.user');
+        const password = this.configService.get('email.imap.password');
+        const host = this.configService.get('email.imap.host');
+        const port = this.configService.get('email.imap.port');
+        if (!user || !password) {
+            const errorMsg = 'Отсутствуют учетные данные для IMAP. Проверьте переменные окружения EMAIL_IMAP_USER и EMAIL_IMAP_PASSWORD';
+            this.logger.error(errorMsg);
+            throw new Error(errorMsg);
+        }
+        if (!host) {
+            const errorMsg = 'Отсутствует хост IMAP. Проверьте переменную EMAIL_IMAP_HOST';
+            this.logger.error(errorMsg);
+            throw new Error(errorMsg);
+        }
         return new Promise((resolve, reject) => {
-            this.imap = new imap_1.default({
-                user: 'u40ta@mail.ru',
-                password: 'YxTNPTFgz3VG8b1nzxPw',
-                host: 'imap.mail.ru',
-                port: 993,
-                tls: true,
+            const imapConfig = {
+                user: user,
+                password: password,
+                host: host,
+                port: port,
+                tls: this.configService.get('email.imap.tls') ?? true,
                 tlsOptions: { rejectUnauthorized: false }
-            });
+            };
+            this.imap = new imap_1.default(imapConfig);
             this.imap.once('ready', async () => {
-                console.log('✅ IMAP подключен к Mail.ru');
+                this.logger.log('IMAP подключен');
                 try {
                     await this.processNewEmails();
                     this.imap.end();
-                    resolve(null);
+                    resolve();
                 }
                 catch (error) {
+                    this.logger.error('Ошибка при обработке писем:', error);
                     this.imap.end();
                     reject(error);
                 }
             });
             this.imap.once('error', (err) => {
-                console.error('❌ IMAP ошибка:', err.message);
-                reject(new Error(`Ошибка подключения: ${err.message}`));
+                this.logger.error('IMAP ошибка:', err);
+                this.logger.error('Тип ошибки:', err.name);
+                this.logger.error('Сообщение ошибки:', err.message);
+                this.logger.error('Полный стек:', err.stack);
+                let errorMessage = err.message;
+                if (err.message && err.message.toLowerCase().includes('authentication')) {
+                    errorMessage = 'Ошибка аутентификации. Проверьте логин и пароль.';
+                }
+                else if (err.message && err.message.toLowerCase().includes('connect')) {
+                    errorMessage = 'Не удалось подключиться к серверу. Проверьте хост и порт.';
+                }
+                else if (err.message && err.message.toLowerCase().includes('timeout')) {
+                    errorMessage = 'Таймаут подключения. Проверьте сетевое соединение.';
+                }
+                else if (!err.message || err.message === '') {
+                    errorMessage = 'Неизвестная ошибка подключения. Проверьте настройки IMAP.';
+                }
+                this.logsService.log('backend', null, {
+                    action: 'imap_error',
+                    error: errorMessage,
+                    originalError: err.message
+                });
+                reject(new Error(`Ошибка подключения: ${errorMessage}`));
             });
-            console.log('🔄 Подключаемся к IMAP...');
+            this.logger.log('Подключаемся к IMAP...');
             this.imap.connect();
         });
     }
@@ -93,23 +103,25 @@ let ImapService = class ImapService {
         return new Promise((resolve, reject) => {
             this.imap.openBox('INBOX', false, (err, box) => {
                 if (err) {
+                    this.logger.error('Ошибка открытия INBOX:', err);
                     reject(new Error(`Ошибка открытия INBOX: ${err.message}`));
                     return;
                 }
                 this.imap.search(['UNSEEN'], (err, results) => {
                     if (err) {
+                        this.logger.error('Ошибка поиска писем:', err);
                         reject(new Error(`Ошибка поиска писем: ${err.message}`));
                         return;
                     }
-                    if (results.length > 0) {
-                        console.log(`📨 Найдено новых писем: ${results.length}`);
+                    if (results && results.length > 0) {
+                        this.logger.log(`Найдено новых писем: ${results.length}`);
                         this.processEmailsSequentially(results)
                             .then(resolve)
                             .catch(reject);
                     }
                     else {
-                        console.log('📭 Новых писем нет');
-                        resolve(null);
+                        this.logger.log('Новых писем нет');
+                        resolve();
                     }
                 });
             });
@@ -117,7 +129,13 @@ let ImapService = class ImapService {
     }
     async processEmailsSequentially(uids) {
         for (const uid of uids) {
-            await this.processEmail(uid);
+            try {
+                this.logger.log(`Обработка письма UID: ${uid}`);
+                await this.processEmail(uid);
+            }
+            catch (error) {
+                this.logger.error(`Ошибка обработки письма ${uid}:`, error);
+            }
         }
     }
     async processEmail(uid) {
@@ -138,59 +156,54 @@ let ImapService = class ImapService {
                             await this.handleParsedEmail(parsed);
                             this.imap.addFlags(uid, ['\\Seen'], (err) => {
                                 if (err) {
-                                    console.error('Ошибка пометки письма:', err);
+                                    this.logger.error('Ошибка пометки письма:', err);
                                 }
                                 else {
-                                    console.log('✅ Письмо помечено как прочитанное');
+                                    this.logger.log(`Письмо ${uid} помечено как прочитанное`);
                                 }
-                                resolve(parsed);
+                                resolve();
                             });
                         }
                         catch (error) {
-                            console.error('Ошибка парсинга письма:', error);
+                            this.logger.error('Ошибка парсинга письма:', error);
                             reject(error);
                         }
                     });
                 });
             });
             fetch.once('error', (err) => {
-                console.error('Ошибка получения письма:', err);
+                this.logger.error('Ошибка получения письма:', err);
                 reject(err);
             });
         });
     }
     async handleParsedEmail(parsedEmail) {
-        console.log('📧 Обрабатываем письмо от:', parsedEmail.from?.value?.[0]?.address);
+        const fromAddress = parsedEmail.from?.value?.[0]?.address;
+        this.logger.log('Обрабатываем письмо от:', fromAddress);
         if (!parsedEmail.attachments || parsedEmail.attachments.length === 0) {
-            console.log('📭 Вложений нет, пропускаем');
+            this.logger.log('Вложений нет, пропускаем');
             return;
         }
-        console.log(`📎 Найдено вложений: ${parsedEmail.attachments.length}`);
+        this.logger.log(`Найдено вложений: ${parsedEmail.attachments.length}`);
         for (const attachment of parsedEmail.attachments) {
-            await this.processAttachment(attachment, parsedEmail);
+            try {
+                this.logger.log(`Обработка вложения: ${attachment.filename}, размер: ${attachment.size} байт`);
+                await this.processAttachment(attachment, parsedEmail);
+            }
+            catch (error) {
+                this.logger.error(`Ошибка обработки вложения ${attachment.filename}:`, error);
+            }
         }
     }
     async processAttachment(attachment, email) {
-        try {
-            const filePath = await this.saveFileToDisk(attachment);
-            await this.emailProcessor.analyzeAndSaveAttachment(filePath, attachment.filename, email.from?.value?.[0]?.address, email.subject);
-        }
-        catch (error) {
-            console.error('❌ Ошибка обработки вложения:', error);
-        }
-    }
-    async saveFileToDisk(attachment) {
-        const attachmentsDir = path.join(process.cwd(), '..', 'email-attachments');
-        const filename = attachment.filename;
-        const filePath = path.join(attachmentsDir, filename);
-        await fs.promises.writeFile(filePath, attachment.content);
-        console.log('💾 Сохранен файл:', filename);
-        return filePath;
+        await this.emailProcessor.analyzeAndSaveAttachment(attachment.content, attachment.filename, email.from?.value?.[0]?.address, email.subject);
     }
 };
 exports.ImapService = ImapService;
-exports.ImapService = ImapService = __decorate([
+exports.ImapService = ImapService = ImapService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [email_processor_service_1.EmailProcessor])
+    __metadata("design:paramtypes", [email_processor_service_1.EmailProcessor,
+        config_1.ConfigService,
+        logs_service_1.LogsService])
 ], ImapService);
 //# sourceMappingURL=imap.service.js.map

@@ -10,6 +10,7 @@ exports.UsersModule = void 0;
 const common_1 = require("@nestjs/common");
 const typeorm_1 = require("@nestjs/typeorm");
 const user_entity_1 = require("./entities/user.entity");
+const mol_access_entity_1 = require("./entities/mol-access.entity");
 const users_controller_1 = require("./users.controller");
 const users_service_1 = require("./users.service");
 const jwt_auth_module_1 = require("../auth/jwt-auth.module");
@@ -19,7 +20,7 @@ exports.UsersModule = UsersModule;
 exports.UsersModule = UsersModule = __decorate([
     (0, common_1.Module)({
         imports: [
-            typeorm_1.TypeOrmModule.forFeature([user_entity_1.User]),
+            typeorm_1.TypeOrmModule.forFeature([user_entity_1.User, mol_access_entity_1.MolAccess]),
             jwt_auth_module_1.JwtAuthModule,
         ],
         controllers: [users_controller_1.UsersController],

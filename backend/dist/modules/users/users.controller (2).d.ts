@@ -3,5 +3,5 @@ export declare class UsersController {
     private readonly usersService;
     constructor(usersService: UsersService);
     findAll(): Promise<import("./entities/user.entity").User[]>;
-    getCurrentUser(req: any): Promise<import("./entities/user.entity").User | null>;
+    getCurrentUser(req: any): Promise<import("./entities/user.entity").User>;
 }

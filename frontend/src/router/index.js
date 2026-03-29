@@ -21,30 +21,22 @@ const routes = [
     component: Login
   },
   {
-  path: '/dbtools',
-  name: 'DBTools',
-  component: () => import('@/views/DBTools.vue'),
-  meta: { requiresAuth: true }
-  },
-  {
-    path: '/object/add_01', // Страница создания нового объекта
-    name: 'ObjectAdd',
-    component: () => import('@/views/ObjectForm/ObjectForm.vue'),
+    path: '/scan/:qrCode', // переход на сайт по ссылке с QR-кода
+    name: 'ScanRedirect',
+    component: { template: '<div></div>' }, // Пустой компонент
     meta: { requiresAuth: true },
-    props: (route) => ({
-      mode: 'add',
-      initialData: route.params.initialData // Бухгалтерские данные из эксель ОСВ, или заглушки при ручном вводе
-    })
-  },
-  {
-    path: '/object/add',
-    name: 'ObjectAdd',
-    component: () => import('@/views/ObjectForm/ObjectForm.vue'),
-    meta: { requiresAuth: true },
-    props: (route) => ({
-      mode: 'add',
-      initialData: route.query.initialData ? JSON.parse(route.query.initialData) : null
-    })
+    beforeEnter: (to, from, next) => {
+      // Собираем полный URL
+      const fullUrl = window.location.origin + to.fullPath
+      // Редирект на Home с qr-параметром
+      next({
+        path: '/',
+        query: { 
+          qr: fullUrl,
+          from: 'scan'
+        }
+      })
+    }
   },
   {
     path: '/statement/:id',
@@ -52,12 +44,24 @@ const routes = [
     component: () => import('@/views/Statement/StatementPage.vue'),
     meta: { requiresAuth: true }
   },
+/*
   {
     path: '/inventory/:id',
     name: 'Inventory',
     component: () => import('@/views/Inventory/InventoryPage.vue'),
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/object/edit/:id',
+    name: 'ObjectEdit',
+    component: () => import('@/views/ObjectForm/ObjectForm.vue'),
+    meta: { requiresAuth: true },
+    props: (route) => ({
+      mode: 'edit',
+      id: route.params.id
+    })
   }
+*/
 ]
 
 const router = createRouter({
@@ -70,24 +74,44 @@ router.beforeEach((to, from, next) => {
   const isAuthenticated = localStorage.getItem('auth_token')
   const isDevelopment = import.meta.env.DEV;
   
-/*
+  // Если это путь /scan/... (вход на сайт по ссылке с QR-кода)
+  if (to.path.startsWith('/scan/')) {
+    // Собираем полный URL
+    const fullUrl = window.location.origin + to.fullPath
+    
+    // Если авторизован — сразу на Home с qr-параметром
+    if (isAuthenticated) {
+      next({
+        path: '/',
+        query: { 
+          qr: fullUrl,
+          from: 'scan'
+        }
+      })
+      return
+    }
+    // Если не авторизован — ТОЛЬКО НА ПРОДЕ сохраняем полный путь
+    // В разработчике — обычный редирект без redirect
+    if (isDevelopment) {
+      next('/dev-login')  // без redirect параметра
+    } else {
+      next(`/login?redirect=${encodeURIComponent(fullUrl)}`)
+    }
+    return
+  }
+  
+  // Остальная логика для других маршрутов
   if (to.meta.requiresAuth && !isAuthenticated) {
-    next('/dev-login')  // <- редирект на dev-login вместо login
+    // ТОЛЬКО НА ПРОДЕ сохраняем redirect
+    if (isDevelopment) {
+      next('/dev-login')
+    } else {
+      const redirectPath = to.fullPath
+      next(`/login?redirect=${encodeURIComponent(redirectPath)}`)
+    }
   } else {
     next()
   }
-*/
-  if (to.meta.requiresAuth && !isAuthenticated) {
-    // В разработке - на dev-login, на проде - на обычный login
-    if (isDevelopment) {
-      next('/dev-login');
-    } else {
-      next('/login');
-    }
-  } else {
-    next();
-  }
-
 })
 
 export default router

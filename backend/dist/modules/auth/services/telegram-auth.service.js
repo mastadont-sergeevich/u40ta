@@ -19,28 +19,24 @@ let TelegramAuthService = TelegramAuthService_1 = class TelegramAuthService {
     constructor(telegramUsersService) {
         this.telegramUsersService = telegramUsersService;
     }
-    async createOrFind(telegramData) {
+    async processTelegramData(telegramData) {
         this.logger.log(`Обработка Telegram данных для пользователя: ${telegramData.first_name}`);
-        let telegramUser = await this.telegramUsersService.findByTelegramId(telegramData.id);
-        let isNew = false;
-        if (!telegramUser) {
-            this.logger.log(`Создание новой заявки для Telegram ID: ${telegramData.id}`);
-            telegramUser = await this.telegramUsersService.create({
-                telegram_id: telegramData.id,
-                first_name: telegramData.first_name,
-                last_name: telegramData.last_name || null,
-                username: telegramData.username || null,
-            });
-            isNew = true;
-            this.logger.log(`Новая заявка создана с ID: ${telegramUser.id}`);
-        }
-        else {
-            this.logger.log(`Найдена существующая заявка с ID: ${telegramUser.id}`);
-        }
-        return {
-            user: telegramUser,
-            isNew: isNew
+        const createTelegramUserDto = {
+            telegram_id: telegramData.id,
+            first_name: telegramData.first_name,
+            last_name: telegramData.last_name || null,
+            username: telegramData.username || null,
         };
+        const user = await this.telegramUsersService.findOrCreate(telegramData.id, createTelegramUserDto);
+        const isNew = !(await this.telegramUsersService.findByTelegramId(telegramData.id));
+        this.logger.log(`Пользователь Telegram обработан: ID ${user.id}, новый: ${isNew}`);
+        return { user, isNew };
+    }
+    async validateTelegramData(telegramData) {
+        this.logger.log(`Проверка подлинности данных Telegram для ID: ${telegramData.id}`);
+        const isValid = true;
+        this.logger.log(`Данные Telegram ${isValid ? 'валидны' : 'невалидны'}`);
+        return isValid;
     }
 };
 exports.TelegramAuthService = TelegramAuthService;

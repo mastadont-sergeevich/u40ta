@@ -24,61 +24,62 @@ let TelegramUsersService = TelegramUsersService_1 = class TelegramUsersService {
     constructor(usersRepository) {
         this.usersRepository = usersRepository;
     }
+    async create(createTelegramUserDto) {
+        this.logger.log(`Создание пользователя Telegram: ${createTelegramUserDto.telegram_id}`);
+        const user = this.usersRepository.create(createTelegramUserDto);
+        const savedUser = await this.usersRepository.save(user);
+        this.logger.log(`Пользователь Telegram создан с ID: ${savedUser.id}`);
+        return savedUser;
+    }
     async findByTelegramId(telegramId) {
-        this.logger.log(`Поиск пользователя по Telegram ID: ${telegramId}`);
+        this.logger.log(`Поиск пользователя Telegram по ID: ${telegramId}`);
         const user = await this.usersRepository.findOne({
             where: { telegram_id: telegramId }
         });
-        if (user) {
-            this.logger.log(`Пользователь с Telegram ID ${telegramId} найден`);
-        }
-        else {
-            this.logger.log(`Пользователь с Telegram ID ${telegramId} не найден`);
-        }
+        this.logger.log(`Пользователь Telegram ${user ? 'найден' : 'не найден'}`);
         return user;
-    }
-    async create(createUserDto) {
-        this.logger.log('Создание нового пользователя Telegram');
-        this.logger.debug(`Данные для создания: ${JSON.stringify(createUserDto)}`);
-        const user = new telegram_user_entity_1.TelegramUser();
-        user.telegram_id = createUserDto.telegram_id;
-        user.first_name = createUserDto.first_name;
-        user.last_name = createUserDto.last_name || null;
-        user.username = createUserDto.username || null;
-        const savedUser = await this.usersRepository.save(user);
-        this.logger.log(`Пользователь создан с ID: ${savedUser.id}`);
-        return savedUser;
-    }
-    async findAll() {
-        this.logger.log('Запрос на получение всех пользователей Telegram');
-        const users = await this.usersRepository.find();
-        this.logger.log(`Найдено пользователей: ${users.length}`);
-        return users;
     }
     async findById(id) {
-        this.logger.log(`Поиск пользователя по внутреннему ID: ${id}`);
+        this.logger.log(`Поиск пользователя Telegram по внутреннему ID: ${id}`);
         const user = await this.usersRepository.findOne({ where: { id } });
         if (!user) {
-            this.logger.warn(`Пользователь с ID ${id} не найден`);
-            throw new common_1.NotFoundException(`User with ID ${id} not found`);
+            this.logger.warn(`Пользователь Telegram с ID ${id} не найден`);
+            throw new common_1.NotFoundException(`TelegramUser with ID ${id} not found`);
         }
-        this.logger.log(`Пользователь с ID ${id} найден`);
         return user;
     }
-    async update(id, updateData) {
-        this.logger.log(`Обновление пользователя с ID: ${id}`);
-        this.logger.debug(`Данные для обновления: ${JSON.stringify(updateData)}`);
+    async findAll() {
+        this.logger.log('Запрос всех пользователей Telegram');
+        return this.usersRepository.find();
+    }
+    async update(id, updateTelegramUserDto) {
+        this.logger.log(`Обновление пользователя Telegram с ID: ${id}`);
         await this.findById(id);
-        await this.usersRepository.update(id, updateData);
+        await this.usersRepository.update(id, updateTelegramUserDto);
         const updatedUser = await this.findById(id);
-        this.logger.log(`Пользователь с ID ${id} успешно обновлен`);
+        this.logger.log(`Пользователь Telegram с ID ${id} обновлен`);
         return updatedUser;
     }
     async remove(id) {
-        this.logger.log(`Удаление пользователя с ID: ${id}`);
+        this.logger.log(`Удаление пользователя Telegram с ID: ${id}`);
         await this.findById(id);
         await this.usersRepository.delete(id);
-        this.logger.log(`Пользователь с ID ${id} успешно удален`);
+        this.logger.log(`Пользователь Telegram с ID ${id} удален`);
+    }
+    async findOrCreate(telegramId, userData) {
+        this.logger.log(`Поиск или создание пользователя Telegram: ${telegramId}`);
+        let user = await this.findByTelegramId(telegramId);
+        if (!user) {
+            this.logger.log(`Создание нового пользователя Telegram: ${telegramId}`);
+            const createDto = {
+                telegram_id: telegramId,
+                first_name: userData.first_name,
+                last_name: userData.last_name,
+                username: userData.username,
+            };
+            user = await this.create(createDto);
+        }
+        return user;
     }
 };
 exports.TelegramUsersService = TelegramUsersService;

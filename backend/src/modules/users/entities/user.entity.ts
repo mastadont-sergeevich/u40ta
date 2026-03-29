@@ -1,13 +1,13 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
-import { TelegramUser } from '../../telegram-users/entities/telegram-user.entity';
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+
 
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ name: 'telegram_user_id', nullable: true })
-  telegramUserId: number;
+  @Column({ name: 'telegram_users_id', nullable: true, unique: true })
+  telegramUsersId: number; // id из telegram_users
 
   @Column({ name: 'last_name' })
   lastName: string;
@@ -18,11 +18,5 @@ export class User {
   @Column()
   abr: string;
 
-  @Column()
-  role: string;
-
-  // Связь с telegram_users
-  @ManyToOne(() => TelegramUser)
-  @JoinColumn({ name: 'telegram_user_id' })
-  telegramUser: TelegramUser;
 }
+
